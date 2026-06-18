@@ -17,7 +17,7 @@ Installing HHD "by the generic Arch instructions" on a fresh CachyOS Handheld in
 
 ```bash
 git clone https://github.com/rgvxsthi/hhd-cachyos-rog-ally.git
-cd hhd-cachyos-rog-ally
+cd Installing-Handheld-Daemon-HHD-on-ASUS-ROG-Ally-on-CachyOS
 chmod +x setup.sh verify.sh
 ./setup.sh            # interactive; add --debug to trace every step
 ```
