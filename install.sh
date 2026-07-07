@@ -27,7 +27,7 @@ set -uo pipefail
 REPO="${HHD_REPO:-rgvxsthi/HHD-on-CachyOS}"
 DIR="${HHD_DIR:-$HOME/HHD-on-CachyOS}"
 
-c_b=$'\e[1m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_g=$'\e[32m'; c_0=$'\e[0m'
+c_b=$'\e[1m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_0=$'\e[0m'
 say()  { printf '%s[hhd]%s %s\n' "$c_b" "$c_0" "$*"; }
 warn() { printf '%s[hhd]%s %s\n' "$c_y" "$c_0" "$*"; }
 die()  { printf '%s[hhd] error:%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }

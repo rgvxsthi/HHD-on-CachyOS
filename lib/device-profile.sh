@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # vars here are consumed by the scripts that source this lib
 # lib/device-profile.sh - Device detection + per-device profile for the HHD
 # installer/uninstaller. Sourced by setup.sh and uninstall.sh so both share ONE
 # source of truth for what differs between handhelds.

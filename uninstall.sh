@@ -153,15 +153,12 @@ PRE_PPD_INSTALLED=1; PRE_PPD_ENABLED="enabled"
 PRE_TUNED_INSTALLED=0; PRE_TUNED_ENABLED="unknown"
 PRE_STEAMOS_STOCK_INSTALLED=1
 PRE_VENDOR_REMOVED=""
-PRE_SLIDER_INSTALLED=0
 if [[ -r "$STATE_FILE" ]]; then
   # shellcheck source=/dev/null
   source "$STATE_FILE"
   pass "Loaded pre-setup snapshot ($STATE_FILE) — restoring exactly what was here"
-  HAVE_STATE=1
 else
   warnr "No pre-setup snapshot found; restoring known CachyOS Handheld defaults (InputPlumber + steamos-manager, no vendor stack)"
-  HAVE_STATE=0
 fi
 
 info "This removes HHD and (unless --no-restore) unmasks PPD/InputPlumber and puts"
