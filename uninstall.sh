@@ -154,52 +154,50 @@ else
   pass "hhd@${REAL_USER} not enabled/active"
 fi
 
-# ---------- 3. remove HHD packages (+ device extras) ----------
-step "3. Remove HHD packages"
+# ---------- 3. remove HHD stack (in dependency order) ----------
+# IMPORTANT: steamos-manager-hhd-git depends on hhd>=4.1, so it MUST be removed
+# BEFORE hhd or the hhd removal fails ("removing hhd breaks dependency ...").
+step "3. Remove HHD stack"
+
+# 3a. in-Steam slider first (it depends on hhd)
+if pkg_installed "$STEAMOS_HHD_PKG"; then
+  warn "${STEAMOS_HHD_PKG} installed (the in-Steam TDP slider; depends on hhd)."
+  if confirm "Disable and remove ${STEAMOS_HHD_PKG}?"; then
+    systemctl --user disable --now "$STEAMOS_HHD_USER_SVC" 2>/dev/null || true
+    sudo systemctl disable --now "$STEAMOS_HHD_SYS_SVC" 2>/dev/null || true
+    if pac -Rns "$STEAMOS_HHD_PKG"; then pass "${STEAMOS_HHD_PKG} removed"; else failr "Could not remove ${STEAMOS_HHD_PKG}"; fi
+  else
+    warnr "Kept ${STEAMOS_HHD_PKG} — this will BLOCK removing hhd (it depends on it)"
+  fi
+else
+  pass "${STEAMOS_HHD_PKG} not installed"
+fi
+
+# 3b. hhd / adjustor / hhd-ui
 HHD_PKGS=()
 for p in hhd-ui adjustor hhd; do pkg_installed "$p" && HHD_PKGS+=("$p"); done
 if (( ${#HHD_PKGS[@]} > 0 )); then
   warn "Installed: ${HHD_PKGS[*]}"
   if confirm "Remove these packages?"; then
-    if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -Rns --noconfirm "${HHD_PKGS[@]}"; else sudo pacman -Rns "${HHD_PKGS[@]}"; fi
-    pass "HHD packages removed"
+    if pac -Rns "${HHD_PKGS[@]}"; then pass "HHD packages removed"; else failr "Could not remove HHD packages (a reverse dependency may still be installed)"; fi
   else
     warnr "Left HHD packages in place"
   fi
 else
   pass "No HHD packages installed"
 fi
-# Device extras (e.g. acpi_call-dkms). Ask separately — user may want acpi_call for other tools.
+
+# 3c. device extras (e.g. acpi_call-dkms). Ask separately — may be wanted elsewhere.
 for p in "${EXTRA_PKGS[@]:-}"; do
   [[ -z "$p" ]] && continue
   if pkg_installed "$p"; then
     if confirm "Also remove device extra '$p' (installed for ${DEVICE} TDP)?"; then
-      if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -Rns --noconfirm "$p"; else sudo pacman -Rns "$p"; fi
-      pass "Removed $p"
+      if pac -Rns "$p"; then pass "Removed $p"; else failr "Could not remove $p"; fi
     else
       info "Kept $p"
     fi
   fi
 done
-
-# ---------- 3b. steamos-manager-hhd (in-Steam TDP slider) ----------
-step "3b. steamos-manager-hhd (in-Steam TDP slider)"
-if pkg_installed "$STEAMOS_HHD_PKG"; then
-  warn "${STEAMOS_HHD_PKG} installed (the in-Steam TDP slider integration)."
-  if confirm "Disable and remove ${STEAMOS_HHD_PKG}?"; then
-    systemctl --user disable --now "$STEAMOS_HHD_USER_SVC" 2>/dev/null || true
-    sudo systemctl disable --now "$STEAMOS_HHD_SYS_SVC" 2>/dev/null || true
-    if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -Rns --noconfirm "$STEAMOS_HHD_PKG"; else sudo pacman -Rns "$STEAMOS_HHD_PKG"; fi \
-      && pass "${STEAMOS_HHD_PKG} removed" \
-      || warnr "Could not remove ${STEAMOS_HHD_PKG}"
-    info "Note: this was a drop-in replacement for stock steamos-manager; removing it"
-    info "leaves no steamos-manager (normal on CachyOS). Reinstall stock only if you need it."
-  else
-    info "Kept ${STEAMOS_HHD_PKG}"
-  fi
-else
-  pass "${STEAMOS_HHD_PKG} not installed"
-fi
 
 # ---------- 4. HHD user config ----------
 step "4. HHD user config"
@@ -243,7 +241,11 @@ if [[ "$RESTORE" -eq 1 ]]; then
     if svc_masked "$svc"; then
       sudo systemctl unmask "$svc" 2>/dev/null && pass "$short unmasked" || warnr "Could not unmask $short"
       if confirm "Enable and start $short now (restore original power management)?"; then
-        sudo systemctl enable --now "$svc" 2>/dev/null && pass "$short enabled" || warnr "Could not enable $short"
+        # PPD is often D-Bus-activated with no [Install] section, so `enable`
+        # fails though it still works. Fall back to start, then to a note.
+        if sudo systemctl enable --now "$svc" 2>/dev/null; then pass "$short enabled"
+        elif sudo systemctl start "$svc" 2>/dev/null; then pass "$short started (D-Bus activated; nothing to enable)"
+        else info "$short left unmasked; it will D-Bus-activate on demand"; fi
       fi
     else
       pass "$short not masked"
@@ -264,8 +266,7 @@ if [[ "$RESTORE" -eq 1 ]]; then
   if pkg_installed inputplumber; then
     pass "InputPlumber already installed"
   elif confirm "Reinstall InputPlumber (CachyOS Handheld ships it by default)?"; then
-    if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -S --needed --noconfirm inputplumber; else sudo pacman -S --needed inputplumber; fi \
-      && pass "InputPlumber reinstalled" || warnr "Could not reinstall InputPlumber"
+    if pac -S --needed inputplumber; then pass "InputPlumber reinstalled"; else warnr "Could not reinstall InputPlumber"; fi
   else
     info "Skipped reinstalling InputPlumber"
   fi
@@ -287,8 +288,7 @@ if [[ "$RESTORE" -eq 1 ]] && (( ${#CONFLICT_PKGS[@]} > 0 )); then
     info "NOTE: only reinstall if you actually had them before. They fight adjustor"
     info "over TDP, so many setups intentionally do without them."
     if confirm "Reinstall ${MISSING[*]}?"; then
-      if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -S --needed --noconfirm "${MISSING[@]}"; else sudo pacman -S --needed "${MISSING[@]}"; fi \
-        && pass "Vendor stack reinstalled" || warnr "Could not reinstall (may be AUR: paru -S ...)"
+      if pac -S --needed "${MISSING[@]}"; then pass "Vendor stack reinstalled"; else warnr "Could not reinstall (may be AUR: paru -S ...)"; fi
     else
       info "Skipped reinstalling vendor stack"
     fi

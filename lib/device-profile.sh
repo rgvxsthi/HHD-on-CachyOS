@@ -105,6 +105,17 @@ svc_exists() {
 # svc_masked <unit> -> 0 if the unit is masked.
 svc_masked() { [[ "$(systemctl is-enabled "$1" 2>/dev/null || true)" == "masked" ]]; }
 
+# pac <pacman args...> -> run pacman, working even under `curl | bash` where stdin
+# is the pipe (EOF) and interactive pacman prompts would otherwise abort. When
+# ASSUME_YES=1 uses --noconfirm; otherwise reads pacman's prompts from /dev/tty
+# (the real terminal) so the user can answer; falls back to --noconfirm if there
+# is no tty at all. Callers should already have gated the action with confirm().
+pac() {
+  if [[ "${ASSUME_YES:-0}" -eq 1 ]]; then sudo pacman --noconfirm "$@"
+  elif [[ -e /dev/tty ]]; then sudo pacman "$@" </dev/tty
+  else sudo pacman --noconfirm "$@"; fi
+}
+
 # mod_loaded <module> -> 0 if the kernel module is loaded.
 # Uses awk (consumes all of lsmod) instead of `lsmod | grep -q`: under
 # `set -o pipefail`, grep -q exits on first match, lsmod gets SIGPIPE (141), and

@@ -163,7 +163,7 @@ if [[ -n "$KVER" ]] && ! (( KMAJ < 6 || (KMAJ == 6 && KMIN < 19) )); then
 else
   warnr "Kernel $KREL is older than 6.19; TDP support may not appear."
   if confirm "Run full update now (pacman -Syu)? You will reboot and re-run after."; then
-    sudo pacman -Syu
+    pac -Syu
     ok "Update done. Reboot, then run ./setup.sh again."
     exit 0
   fi
@@ -205,8 +205,7 @@ if pkg_installed inputplumber; then
   warn "InputPlumber installed; it fights HHD over the controller."
   if confirm "Stop, mask, and remove InputPlumber?"; then
     sudo systemctl mask --now inputplumber || true
-    if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -R --noconfirm inputplumber; else sudo pacman -R inputplumber; fi
-    pass "InputPlumber removed and masked"
+    if pac -R inputplumber; then pass "InputPlumber removed and masked"; else failr "Could not remove InputPlumber"; fi
   else
     warnr "InputPlumber left in place; HHD button remapping will likely fail"
   fi
@@ -252,8 +251,7 @@ if (( ${#CONFLICT_PKGS[@]} > 0 )); then
     warn "Found: ${FOUND_PKGS[*]} (fights adjustor over the platform profile)"
     if confirm "Disable ${CONFLICT_SVC:-service} and remove these?"; then
       [[ -n "$CONFLICT_SVC" ]] && sudo systemctl disable --now "$CONFLICT_SVC" 2>/dev/null || true
-      if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -R --noconfirm "${FOUND_PKGS[@]}"; else sudo pacman -R "${FOUND_PKGS[@]}"; fi
-      pass "Vendor userspace stack removed"
+      if pac -R "${FOUND_PKGS[@]}"; then pass "Vendor userspace stack removed"; else failr "Could not remove vendor stack"; fi
     else
       warnr "Vendor stack left in place; it may fight adjustor for TDP"
     fi
@@ -270,8 +268,7 @@ INSTALL_PKGS=(hhd adjustor hhd-ui "${EXTRA_PKGS[@]:-}")
 # drop any empty element from the extras expansion
 CLEAN_PKGS=(); for p in "${INSTALL_PKGS[@]}"; do [[ -n "$p" ]] && CLEAN_PKGS+=("$p"); done
 (( ${#EXTRA_PKGS[@]:-0} > 0 )) && info "Device extras: ${EXTRA_PKGS[*]} (Legion needs acpi_call for TDP)"
-PAC_ARGS=(-S --needed); [[ "$ASSUME_YES" -eq 1 ]] && PAC_ARGS+=(--noconfirm)
-if sudo pacman "${PAC_ARGS[@]}" "${CLEAN_PKGS[@]}"; then
+if pac -S --needed "${CLEAN_PKGS[@]}"; then
   pass "Packages installed: ${CLEAN_PKGS[*]}"
 else
   failr "pacman could not install one or more packages"
@@ -330,8 +327,7 @@ if [[ "$do_slider" -eq 1 ]]; then
     # steamos-tdp writes explicit watts via acpi_call; ensure the module is available.
     if ! pkg_installed acpi_call-dkms && ! mod_loaded acpi_call; then
       info "Installing acpi_call-dkms (needed for the slider's custom-watt TDP writes)."
-      if [[ "$ASSUME_YES" -eq 1 ]]; then sudo pacman -S --needed --noconfirm acpi_call-dkms; else sudo pacman -S --needed acpi_call-dkms; fi \
-        || warnr "acpi_call-dkms install failed; the slider's custom TDP may not write"
+      pac -S --needed acpi_call-dkms || warnr "acpi_call-dkms install failed; the slider's custom TDP may not write"
     fi
     info "Building ${STEAMOS_HHD_PKG} directly from the AUR with makepkg"
     info "(installs git/base-devel + pulls rust/clang; this takes a while)..."
