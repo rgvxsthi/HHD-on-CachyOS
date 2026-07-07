@@ -220,23 +220,11 @@ for p in "${EXTRA_PKGS[@]:-}"; do
   fi
 done
 
-# ---------- 3d. reset RGB that HHD left on ----------
-# HHD drives the controller RGB; removing it does NOT turn the LEDs off — the
-# kernel LED driver just holds HHD's last value, so the rings stay lit and look
-# like HHD is "still running". Turn the RGB LEDs off to match the pre-HHD state.
-step "3d. Reset controller RGB"
-rgb_found=0
-for led in /sys/class/leds/*:rgb:*; do
-  [[ -e "$led/brightness" ]] || continue
-  rgb_found=1
-  short="${led##*/}"
-  if [[ "$(cat "$led/brightness" 2>/dev/null || echo 0)" != "0" ]]; then
-    sudo sh -c "echo 0 > '$led/brightness'" 2>/dev/null && pass "RGB off: $short" || warnr "Could not turn off $short"
-  else
-    pass "RGB already off: $short"
-  fi
-done
-[[ "$rgb_found" -eq 0 ]] && info "No :rgb: LEDs found (nothing to reset)"
+# NOTE: we deliberately do NOT touch the controller RGB here. On the ROG Ally the
+# joystick-ring RGB (ally:rgb:joystick_rings) is lit by default at boot by the
+# ASUS driver / InputPlumber — it is NOT HHD-specific. HHD only changes its colour
+# while running; at the next boot the driver restores the stock ring state. Forcing
+# the LEDs off on uninstall would impose a non-stock state that doesn't even persist.
 
 # ---------- 4. HHD user config ----------
 step "4. HHD user config"
