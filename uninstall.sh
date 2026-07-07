@@ -260,18 +260,22 @@ fi
 svc_restore() {
   local svc="$1" was="$2" short="${1%.service}"
   svc_masked "$svc" && { sudo systemctl unmask "$svc" 2>/dev/null && pass "$short unmasked" || warnr "Could not unmask $short"; }
-  # Clear any failed/start-limit state left from the teardown churn (e.g. PPD can
-  # briefly fail to own its D-Bus name right after HHD's replacement is removed),
-  # so we don't leave a unit stuck in 'failed (start-limit-hit)'.
   sudo systemctl reset-failed "$svc" 2>/dev/null || true
+  # Arm for next boot if it was enabled before.
   case "$was" in
-    disabled|masked|unknown|"")
-      sudo systemctl start "$svc" 2>/dev/null && info "$short started (was not enabled; D-Bus/socket activated)" || info "$short left to D-Bus-activate on demand" ;;
-    *)
-      if sudo systemctl enable --now "$svc" 2>/dev/null; then pass "$short enabled + started"
-      elif sudo systemctl start "$svc" 2>/dev/null; then pass "$short started (no [Install]; D-Bus activated)"
-      else info "$short will D-Bus-activate on demand"; fi ;;
+    disabled|masked|unknown|"") : ;;                          # was D-Bus/socket activated, not enabled
+    *) sudo systemctl enable "$svc" 2>/dev/null || true ;;
   esac
+  # Try to start now, but a service whose D-Bus name is still held by the just-
+  # removed HHD replacement (e.g. power-profiles-daemon owning net.hadess.
+  # PowerProfiles) will fail. Do NOT leave it 'failed' — reset it back to inactive;
+  # it starts cleanly on the reboot this script prompts for.
+  if sudo systemctl start "$svc" 2>/dev/null; then
+    pass "$short started"
+  else
+    sudo systemctl reset-failed "$svc" 2>/dev/null || true
+    info "$short will start on next boot (its D-Bus name was still busy during teardown)"
+  fi
 }
 
 # ---------- 6. restore power-profiles-daemon / tuned ----------
