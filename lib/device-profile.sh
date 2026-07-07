@@ -81,8 +81,15 @@ hhd_state_file() { printf '%s/hhd-on-cachyos/pre-setup.env' "${XDG_STATE_HOME:-$
 # which is enough here because STEAMOS_HHD_PKG has no AUR-only dependencies.
 # Must run as a NORMAL user (makepkg refuses root); it uses sudo itself for pacman.
 # Returns 0 on a successful install, 1 on any failure. Temp dir is always cleaned.
+# aur_makepkg_install <pkgbase> <assume_yes 0|1> [conflict_pkg]
+# If conflict_pkg is given, it is a currently-installed package that the built
+# package `conflicts`+`provides` (e.g. steamos-manager-hhd-git vs steamos-manager).
+# Under --noconfirm pacman defaults the "remove conflicting package?" prompt to No,
+# so we BUILD first, then remove the conflicting package (deps are satisfied by the
+# new one's `provides`), then install — build-first so a build failure never leaves
+# the machine with the conflicting package removed and nothing in its place.
 aur_makepkg_install() {
-  local pkg="$1" ay="${2:-0}"
+  local pkg="$1" ay="${2:-0}" conflict="${3:-}"
 
   # Toolchain needed to build any AUR package (via the tty-aware pac()).
   ASSUME_YES="$ay" pac -S --needed git base-devel || return 1
@@ -90,14 +97,21 @@ aur_makepkg_install() {
   local tmp rc=1
   tmp="$(mktemp -d)" || return 1
   if git clone --depth 1 "https://aur.archlinux.org/${pkg}.git" "$tmp/${pkg}"; then
-    # makepkg -si runs an inner `sudo pacman` that prompts; under `curl | bash`
-    # stdin is the pipe, so read makepkg's prompts from /dev/tty (or --noconfirm).
-    if [[ "$ay" -eq 1 ]]; then
-      ( cd "$tmp/${pkg}" && makepkg -si --noconfirm ) && rc=0
-    elif [[ -e /dev/tty ]]; then
-      ( cd "$tmp/${pkg}" && makepkg -si </dev/tty ) && rc=0
-    else
-      ( cd "$tmp/${pkg}" && makepkg -si --noconfirm ) && rc=0
+    # Build only (-f, no -i). makepkg's dep install runs an inner `sudo pacman`
+    # that prompts; under `curl | bash` stdin is the pipe, so read from /dev/tty.
+    local mkok=0
+    if [[ "$ay" -eq 1 ]]; then ( cd "$tmp/${pkg}" && makepkg -sf --noconfirm ) && mkok=1
+    elif [[ -e /dev/tty ]]; then ( cd "$tmp/${pkg}" && makepkg -sf </dev/tty ) && mkok=1
+    else ( cd "$tmp/${pkg}" && makepkg -sf --noconfirm ) && mkok=1; fi
+
+    if [[ "$mkok" -eq 1 ]]; then
+      local built
+      built="$(find "$tmp/${pkg}" -maxdepth 1 -name '*.pkg.tar.*' ! -name '*-debug-*' 2>/dev/null | head -1)"
+      if [[ -n "$built" ]]; then
+        # Clear the conflicting package first so the install is prompt-free.
+        [[ -n "$conflict" ]] && pacman -Qq "$conflict" &>/dev/null && { ASSUME_YES="$ay" pac -Rdd "$conflict" || true; }
+        ASSUME_YES="$ay" pac -U "$built" && rc=0
+      fi
     fi
   fi
   rm -rf "$tmp"

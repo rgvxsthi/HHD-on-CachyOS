@@ -366,7 +366,7 @@ if [[ "$do_slider" -eq 1 ]]; then
     fi
     info "Building ${STEAMOS_HHD_PKG} directly from the AUR with makepkg"
     info "(installs git/base-devel + pulls rust/clang; this takes a while)..."
-    if aur_makepkg_install "$STEAMOS_HHD_PKG" "$ASSUME_YES"; then
+    if aur_makepkg_install "$STEAMOS_HHD_PKG" "$ASSUME_YES" "$STEAMOS_STOCK_PKG"; then
       pass "${STEAMOS_HHD_PKG} installed (replaces stock steamos-manager)"
       state_record "PRE_SLIDER_INSTALLED=1"
       sudo systemctl enable --now "$STEAMOS_HHD_SYS_SVC" 2>/dev/null \
