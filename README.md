@@ -1,24 +1,36 @@
-# HHD on CachyOS for the ASUS ROG Ally
+# HHD on CachyOS for ASUS ROG Ally & Lenovo Legion Go
 
-Get **Handheld Daemon (HHD)** working properly on CachyOS for the ASUS ROG Ally: TDP, fan control, RGB, and the Armoury / Command Center buttons. Includes a guided, logged install script and a read-only health check.
+Get **Handheld Daemon (HHD)** working properly on CachyOS: TDP, fan control, RGB, and the vendor menu buttons. The scripts **auto-detect** your device (ASUS ROG Ally family or Lenovo Legion Go family) and apply the right actions. Includes a guided, logged install script, a matching uninstaller, and a read-only health check.
 
 > **Tested on:** CachyOS (Handheld Edition), **ASUS ROG Ally Z1 Extreme**, kernel `7.0.12-1-cachyos-deckify` (anything 6.19+ should work, since that is where the `asus-armoury` TDP driver is mainline).
-> Not tested on the Ally X, Legion Go, Steam Deck, or anything else. The conflict pattern and package list should carry over to other ASUS handhelds on CachyOS, but treat anything outside the Z1 Extreme as unverified.
+> **Lenovo Legion Go support is derived from HHD's own source** (device detection, the `acpi_call` TDP path, udev `xpad` binding) and is **unverified on real hardware** — treat it as best-effort until someone confirms. See [Supported devices](#supported-devices).
+
+## Supported devices
+
+The device is matched from DMI `product_name` in [`lib/device-profile.sh`](lib/device-profile.sh):
+
+| Family | Models | TDP path | Vendor conflicts removed | Controller note |
+|---|---|---|---|---|
+| **ASUS ROG Ally** | ROG Ally / Ally X / ROG Xbox Ally | `asus_wmi` + `asus_armoury` → `platform_profile` | asusctl, rog-control-center, supergfxctl, asusd | optional `hid_asus_ally` blacklist (double-pad case) |
+| **Lenovo Legion Go** | Go (83E1), Go 2 (83N0/83N1), Go S (83L3/83N6/83Q2/83Q3) | `acpi_call` module → `/proc/acpi/call` | none exist | needs `xpad` bound via HHD's udev rule; **no blacklist** |
+
+Both families share: InputPlumber removal, `power-profiles-daemon`/`tuned` masking, and the `hhd`/`hhd-ui` install. Lenovo additionally installs `acpi_call-dkms` (its TDP interface). An unrecognized device still gets the shared steps with a warning.
 
 ## Why this exists
 
-Installing HHD "by the generic Arch instructions" on a fresh CachyOS Handheld install leaves you with **no TDP section in the UI** and **dead Armoury / Command Center buttons**. None of that is HHD's fault. It comes from three CachyOS-specific things the generic instructions never mention:
+Installing HHD "by the generic Arch instructions" on a fresh CachyOS Handheld install leaves you with **no TDP section in the UI** and **dead vendor menu buttons**. None of that is HHD's fault. It comes from CachyOS-specific things the generic instructions never mention:
 
-1. **TDP is a separate package.** `hhd` does controllers, RGB, and the overlay. TDP and fans come from `adjustor`. No `adjustor`, no TDP section.
-2. **CachyOS ships InputPlumber**, which fights HHD over the controller and the ASUS keyboard device the buttons live on. `systemctl disable` is not enough because InputPlumber is D-Bus activated and relaunches itself. You have to mask or remove it and reboot.
-3. **`systemctl enable` without `--now`** arms the service for next boot but never starts it in the current session, so it looks dead.
+1. **TDP is a separate package.** `hhd` does controllers, RGB, and the overlay. TDP and fans come from `adjustor` (merged into `hhd` as of v4). On Lenovo, TDP also needs the `acpi_call` kernel module (`acpi_call-dkms`).
+2. **CachyOS ships InputPlumber**, which fights HHD over the controller and the keyboard device the buttons live on. `systemctl disable` is not enough because InputPlumber is D-Bus activated and relaunches itself. You have to mask or remove it and reboot.
+3. **`power-profiles-daemon` (and `tuned`) fight adjustor** over the power profile and the PowerProfiles D-Bus name — adjustor *is* a drop-in PPD replacement — so if either runs, **TDP silently fails**. They must be masked. See [Troubleshooting](#power-profiles-daemon--tuned-silent-tdp-failure).
+4. **`systemctl enable` without `--now`** arms the service for next boot but never starts it in the current session, so it looks dead.
 
 ## Quick start (script)
 
 ```bash
-git clone https://github.com/rgvxsthi/hhd-cachyos-rog-ally.git
-cd Installing-Handheld-Daemon-HHD-on-ASUS-ROG-Ally-on-CachyOS
-chmod +x setup.sh verify.sh
+git clone https://github.com/rgvxsthi/HHD-on-ROG-Ally.git
+cd HHD-on-ROG-Ally
+chmod +x setup.sh verify.sh uninstall.sh
 ./setup.sh            # interactive; add --debug to trace every step
 ```
 
@@ -28,21 +40,35 @@ After the reboot:
 ./verify.sh           # read-only; add --debug for full trace
 ```
 
-The script is interactive and idempotent. It refuses to run as root, checks your kernel and the ASUS power interface before changing anything, asks before removing packages, and never reboots you without asking. It runs under `bash`; if you launch it with `sh` it re-execs itself under `bash` automatically.
+To reverse everything and restore the pre-install state:
+
+```bash
+./uninstall.sh        # removes HHD, unmasks PPD/InputPlumber, restores vendor stack
+```
+
+The scripts source [`lib/device-profile.sh`](lib/device-profile.sh) for device detection, so keep the `lib/` folder alongside them. They are interactive and idempotent, refuse to run as root, check your kernel and TDP interface before changing anything, ask before removing packages, and never reboot you without asking. They run under `bash`; if launched with `sh` they re-exec under `bash` automatically.
 
 ### Flags
 
 - `--debug` (or `-debug`, `-d`): trace every command as it runs. Use this if something fails and you want to see exactly where.
 - `--yes` (or `-y`): assume yes to prompts. Still asks before rebooting.
+- `--steam-slider`: also install `steamos-manager-hhd` for the in-Steam TDP slider (AUR). See [that section](#optional-the-in-steam-tdp-slider-steamos--bazzite-feel).
+- `--no-steam-slider`: skip the in-Steam TDP slider without asking.
 - `--no-reboot`: never prompt to reboot.
 - `--help` (or `-h`).
 
+`uninstall.sh` adds two of its own:
+
+- `--no-restore`: just remove HHD; do **not** unmask/reinstall InputPlumber, PPD, or the vendor stack.
+- `--purge`: also delete `~/.config/hhd` (your profiles) and `~/hhd-setup-*.log`.
+
 ### Logging
 
-Every run of both scripts writes a timestamped log to your home directory:
+Every run of the scripts writes a timestamped log to your home directory:
 
 - `~/hhd-setup-<timestamp>.log`
 - `~/hhd-verify-<timestamp>.log`
+- `~/hhd-uninstall-<timestamp>.log`
 
 Each script also prints a `BEGIN HHD DIAGNOSTICS ... END` block at the end. Paste that block (or attach the log) when filing an issue or asking for help. Console output keeps colour; the log file has the colour codes stripped so it stays readable.
 
@@ -63,16 +89,22 @@ cat /sys/firmware/acpi/platform_profile_choices   # low-power balanced performan
 sudo systemctl mask --now inputplumber
 sudo pacman -R inputplumber
 
-# 4. remove the ASUS userspace stack IF present (it fights adjustor) - see Troubleshooting
-pacman -Qs asusctl rog-control-center supergfxctl
+# 4. mask power-profiles-daemon + tuned (they fight adjustor over TDP - see Troubleshooting)
+sudo systemctl mask --now power-profiles-daemon.service
+sudo systemctl mask --now tuned.service          # if present
 
-# 5. install all three packages
+# 5. ASUS ONLY: remove the ASUS userspace stack IF present (it fights adjustor)
+pacman -Qs asusctl rog-control-center supergfxctl
+#    LENOVO ONLY: install the acpi_call module for TDP instead
+#    sudo pacman -S acpi_call-dkms
+
+# 6. install the packages (Lenovo: add acpi_call-dkms)
 sudo pacman -S hhd adjustor hhd-ui
 
-# 6. enable AND start (the --now matters)
+# 7. enable AND start (the --now matters)
 sudo systemctl enable --now hhd@$(whoami)
 
-# 7. reboot
+# 8. reboot
 reboot
 ```
 
@@ -112,9 +144,52 @@ sudo systemctl disable --now asusd
 sudo pacman -R rog-control-center asusctl supergfxctl   # remove only what is installed
 ```
 
-The `setup.sh` script detects and offers to remove these for you.
+The `setup.sh` script detects and offers to remove these for you. **Lenovo Legion Go has no equivalent** — there is no Linux vendor daemon that fights adjustor, so the script skips this step on Lenovo.
 
-### Double controller / dead buttons: the `hid_asus` blacklist
+### `power-profiles-daemon` / `tuned`: silent TDP failure
+
+This one is device-agnostic (ASUS **and** Lenovo) and easy to miss because nothing errors — the TDP section just quietly does nothing.
+
+adjustor drives the power profile directly **and** registers the PowerProfiles D-Bus names (`org.freedesktop.UPower.PowerProfiles` / `net.hadess.PowerProfiles`) — it is effectively a drop-in replacement for `power-profiles-daemon`. CachyOS ships PPD by default. If PPD (or `tuned`) is running, adjustor cannot own the bus name (and on ASUS also fights the `platform_profile` sysfs node), so it refuses to initialize TDP unless the `HHD_PPD_MASK` environment variable is set. On a manual CachyOS install it is not, so **you must mask them yourself**:
+
+```bash
+sudo systemctl mask --now power-profiles-daemon.service
+sudo systemctl mask --now tuned.service    # only if present
+```
+
+**Mask, don't `pacman -R`.** Removal drags out the desktop power panels (GNOME/KDE) that depend on the PPD D-Bus API — which adjustor's own replacement then serves — and a plain `disable` can be reactivated via D-Bus/socket. `setup.sh` masks them for you; `uninstall.sh` unmasks and re-enables them.
+
+### "Do I need to remove `steamos-manager`?"
+
+**No — do not remove it.** `steamos-manager` is a Valve/SteamOS component; it is **not** in the CachyOS or Arch repos and **not** part of the CachyOS-Handheld image, so on a stock CachyOS install there is nothing to remove. The advice "remove steamos-manager for HHD" comes from SteamOS/Bazzite contexts and does not apply here. Neither script removes it.
+
+### Optional: the in-Steam TDP slider (SteamOS / Bazzite feel)
+
+Want the Deck-style TDP/GPU sliders inside **Steam's own performance menu** (Game Mode), on top of the HHD overlay? That comes from the HHD fork of steamos-manager, `steamos-manager-hhd-git` (AUR). It implements Valve's `SteamOSManager1` D-Bus API and shells out to HHD's `hhd.steamos` helper, so the Steam slider and the HHD overlay both drive **one** HHD backend — they coexist, the overlay is unaffected.
+
+`setup.sh --steam-slider` installs and wires it up for you. It builds the package **directly from the AUR with `makepkg`** — no AUR helper (`paru`/`yay`) required; it installs `git`/`base-devel` and lets `makepkg -s` pull the rest from the official repos. What it does and what you must know:
+
+- **Replaces stock `steamos-manager`** (`provides`+`conflicts`; can't co-install). Depends on `hhd >= 4.1`; builds from source (pulls `rust`/`clang`).
+- **Nothing auto-enables** — the script runs `sudo systemctl enable --now steamos-manager.service` and `systemctl --user enable --now steamos-manager.service` (the user unit is the one Steam talks to; it must be enabled inside your desktop/graphical session).
+- **Turn on "Enable TDP Controls" in the HHD app.** Without it the slider stays inert.
+- **Game Mode only.** The slider lives in Steam's Deck performance menu in the gamescope session (CachyOS-Handheld `gamescope-session-plus@steam`), not desktop Big Picture.
+- **Disable Decky TDP plugins** (SimpleDeckyTDP / PowerControl) — HHD reports a conflict and greys the slider out otherwise.
+- Installs `acpi_call-dkms` if missing, because the slider writes explicit wattages through `acpi_call`.
+
+Manual equivalent (direct AUR build, no helper):
+
+```bash
+sudo pacman -S --needed git base-devel
+git clone https://aur.archlinux.org/steamos-manager-hhd-git.git
+cd steamos-manager-hhd-git && makepkg -si
+sudo systemctl enable --now steamos-manager.service
+systemctl --user enable --now steamos-manager.service   # inside your desktop session
+# then in the HHD app: Enable TDP Controls = ON
+```
+
+`uninstall.sh` disables the units and removes the package (leaving no steamos-manager, which is the CachyOS default). Unverified on CachyOS hardware; it is an AUR `-git` build, so it can lag Steam/HHD changes.
+
+### Double controller / dead buttons: the `hid_asus` blacklist (ASUS only)
 
 Some users on **other CachyOS kernels** report that HHD does not fully take over the controller, and they had to blacklist the native ASUS HID drivers. **Only do this if you actually have the symptom.**
 
@@ -130,6 +205,19 @@ sudo reboot
 ```
 
 **Known-good baseline (no blacklist needed):** on `7.0.12-1-cachyos-deckify` with `hid_asus_ally` and `asus_armoury` loaded, Steam shows a single emulated controller and HHD grabs the raw pad cleanly. Removing InputPlumber is part of why the grab is clean. Whether you hit the double-controller case appears to depend on your CachyOS kernel flavour. Run `verify.sh` after reboot; it enumerates your controller devices and tells you whether to check for this.
+
+### Lenovo Legion Go: controllers and TDP
+
+Legion differs from ASUS in two ways the scripts handle automatically:
+
+- **TDP uses `acpi_call`, not `platform_profile`.** adjustor talks to the Lenovo GameZone WMI methods (`\_SB.GZFD.*`) through `/proc/acpi/call`, which needs the `acpi_call` kernel module. `setup.sh` installs `acpi_call-dkms` and loads it. If TDP is missing on Legion, check `lsmod | grep acpi_call` and that `/proc/acpi/call` exists.
+- **Controllers need `xpad` bound, not a blacklist.** There is **no** Legion HID module to blacklist. Instead the kernel must bind `xpad` to the pad, which HHD ships as a udev rule (`/usr/lib/udev/rules.d/83-hhd.rules`) — important for the Go S (VID `1a86` PID `e310`). If the controller is missing, confirm that rule is installed (it comes with the `hhd` package). Until the binding is mainlined, the Go tablet may also need the shipped rule or a kernel patch.
+
+No Legion model hard-requires the Bazzite kernel (only the ROG Z13 2025 does). Legion Go 2 (`83N0`/`83N1`) specifics are **unconfirmed**.
+
+### Wrong / scrambled buttons after install (e.g. reported on Ally X)
+
+If face buttons work but the rest are scrambled (R2 dead, Start/Select dead, a shoulder opens the HHD overlay), HHD grabbed the pad but applied the **wrong button map** — usually wrong device detection, a stale HHD, or InputPlumber not fully removed. Run `./verify.sh` and paste the diagnostics block. First moves: update HHD (`sudo pacman -Syu hhd`), confirm InputPlumber is masked+gone and reboot, and check `cat /sys/class/dmi/id/product_name` matches your actual model. `asus_armoury` blacklisting does **not** fix this (it only breaks TDP); the only controller-related blacklist is the ASUS `hid_asus_ally` double-pad case above.
 
 ### Verifying TDP actually changes
 
@@ -164,6 +252,22 @@ You will see this repeated everywhere. It does not apply cleanly to CachyOS:
 - **Battery charge limit** (the `adjustor_battery` module): cap charging at 80% in the HHD app if it lives on the charger.
 - **AC vs battery TDP profiles** and a **fan curve** in the HHD app.
 - **Back paddle buttons (M1 / M2)** bound in HHD's Controller section. They do nothing until mapped.
+
+## Uninstalling
+
+`uninstall.sh` reverses `setup.sh` for whatever device it detects:
+
+- disables and stops `hhd@<user>`, removes `hhd`/`adjustor`/`hhd-ui` (and Lenovo's `acpi_call-dkms`, asked separately);
+- unmasks and (with prompts) re-enables `power-profiles-daemon`/`tuned` and InputPlumber;
+- ASUS: offers to reinstall the vendor stack and removes the `hid_asus_ally` blacklist file (rebuilding the initramfs); Lenovo: nothing vendor-specific to restore;
+- if you installed the in-Steam slider, disables its units and removes `steamos-manager-hhd-git`;
+- optionally deletes your HHD config and setup logs (`--purge`).
+
+```bash
+./uninstall.sh                 # interactive, restores original state
+./uninstall.sh --no-restore    # strip HHD only, leave PPD/InputPlumber as the install left them
+./uninstall.sh --purge --yes   # non-interactive full teardown incl. config + logs
+```
 
 ## Credits
 
