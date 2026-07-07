@@ -194,11 +194,12 @@ elif [[ "$DEVICE" == "lenovo" ]]; then
   # Legion needs xpad + HHD udev rule
   [[ -e /usr/lib/udev/rules.d/83-hhd.rules ]] && pass "HHD udev rules present (83-hhd.rules; xpad binding)" || fail "HHD udev rules missing (/usr/lib/udev/rules.d/83-hhd.rules) — Legion controller may not bind"
   mod_loaded xpad && pass "xpad loaded" || warn "xpad not loaded (Legion controllers bind via xpad)"
-  # hid_lenovo_go: controller config driver (rumble/RGB/sleep), Linux 7.1+
-  for m in "${CONTROLLER_MODULES[@]:-}"; do
-    [[ -z "$m" ]] && continue
-    mod_loaded "$m" && pass "$m loaded (controller config: rumble/RGB/sleep)" || warn "$m not loaded — needs Linux 7.1+ (or a kernel with it); Legion controller config unavailable without it"
-  done
+  # hid_lenovo_go must be blacklisted so it doesn't fight HHD's pad (gamescope plug/unplug)
+  if [[ "$NEEDS_HID_BLACKLIST" -eq 1 && -n "$BLACKLIST_FILE" ]]; then
+    if [[ -e "$BLACKLIST_FILE" ]]; then pass "controller blacklist present ($BLACKLIST_FILE: ${HID_BLACKLIST[*]})"
+    elif mod_loaded hid_lenovo_go; then warn "hid_lenovo_go loaded + NOT blacklisted — expect gamescope controller plug/unplug; re-run setup to apply the blacklist"
+    else echo "  controller blacklist: not applied (hid_lenovo_go absent on this kernel; only needed on Linux 7.1+)"; fi
+  fi
   echo
   echo "${c_bold}MANUAL CHECK (Legion controllers):${c_reset}"
   echo "  No HID module to blacklist on Legion. If the controller is missing, the"

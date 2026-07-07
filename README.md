@@ -12,7 +12,7 @@ The device is matched from DMI `product_name` in [`lib/device-profile.sh`](lib/d
 | Family | Models | TDP path | Vendor conflicts removed | Controller note |
 |---|---|---|---|---|
 | **ASUS ROG Ally** | ROG Ally / Ally X / ROG Xbox Ally | `asus_wmi` + `asus_armoury` → `platform_profile` | asusctl, rog-control-center, supergfxctl, asusd | optional `hid_asus_ally` blacklist (double-pad case) |
-| **Lenovo Legion Go** | Go (83E1), Go 2 (83N0/83N1), Go S (83L3/83N6/83Q2/83Q3) | `acpi_call` module → `/proc/acpi/call` | none exist | needs `xpad` bound via HHD's udev rule; **no blacklist** |
+| **Lenovo Legion Go** | Go (83E1), Go 2 (83N0/83N1), Go S (83L3/83N6/83Q2/83Q3) | `acpi_call` module → `/proc/acpi/call` | none exist | `xpad` bound via HHD's udev rule; on Linux 7.1+ setup offers to blacklist `hid_lenovo_go` (else gamescope plug/unplug) |
 
 Both families share: InputPlumber removal, `power-profiles-daemon`/`tuned` masking, and the `hhd`/`hhd-ui` install. Lenovo additionally installs `acpi_call-dkms` (its TDP interface). An unrecognized device still gets the shared steps with a warning.
 
@@ -232,7 +232,8 @@ sudo reboot
 Legion differs from ASUS in two ways the scripts handle automatically:
 
 - **TDP uses `acpi_call`, not `platform_profile`.** adjustor talks to the Lenovo GameZone WMI methods (`\_SB.GZFD.*`) through `/proc/acpi/call`, which needs the `acpi_call` kernel module. `setup.sh` installs `acpi_call-dkms` and loads it. If TDP is missing on Legion, check `lsmod | grep acpi_call` and that `/proc/acpi/call` exists.
-- **Controllers need `xpad` bound, not a blacklist.** There is **no** Legion HID module to blacklist. Instead the kernel must bind `xpad` to the pad, which HHD ships as a udev rule (`/usr/lib/udev/rules.d/83-hhd.rules`) — important for the Go S (VID `1a86` PID `e310`). If the controller is missing, confirm that rule is installed (it comes with the `hhd` package). Until the binding is mainlined, the Go tablet may also need the shipped rule or a kernel patch.
+- **Controllers need `xpad` bound.** The kernel must bind `xpad` to the pad, which HHD ships as a udev rule (`/usr/lib/udev/rules.d/83-hhd.rules`) — important for the Go S (VID `1a86` PID `e310`). If the controller is missing, confirm that rule is installed (it comes with the `hhd` package). Until the binding is mainlined, the Go tablet may also need the shipped rule or a kernel patch.
+- **Blacklist `hid_lenovo_go` (Linux 7.1+).** That's the mainline Legion Go controller driver. When it and HHD's controller emulation are both active, the pad **plug/unplugs in the gamescope session** — the Legion analogue of the ASUS double-controller case. `setup.sh` detects Legion and offers to blacklist it (writes `/etc/modprobe.d/hhd-lenovo.conf` + rebuilds the initramfs); `uninstall.sh` removes it. On kernels older than 7.1 the module doesn't exist and there's nothing to blacklist. **Unverified on hardware** — based on a user report; the exact module name may differ on the merged kernel (`hid_legion` / `hid_lenovo_legion_go`).
 
 No Legion model hard-requires the Bazzite kernel (only the ROG Z13 2025 does). Legion Go 2 (`83N0`/`83N1`) specifics are **unconfirmed**.
 

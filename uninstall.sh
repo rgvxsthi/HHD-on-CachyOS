@@ -244,23 +244,27 @@ fi
 
 # ---------- 5. remove hid_asus_ally blacklist (README manual step, ASUS) ----------
 step "5. Controller HID blacklist"
-BLFILE="/etc/modprobe.d/hhd-ally.conf"
-if [[ -e "$BLFILE" ]]; then
-  warn "Found $BLFILE (the hid_asus_ally blacklist from the README)."
-  if confirm "Remove it and rebuild initramfs so the native ASUS HID driver loads normally?"; then
-    sudo rm -f "$BLFILE" && pass "Removed $BLFILE"
-    if command -v mkinitcpio &>/dev/null; then
-      sudo mkinitcpio -P && pass "initramfs rebuilt" || warnr "mkinitcpio failed; rebuild manually"
-    elif command -v dracut &>/dev/null; then
-      sudo dracut --force --regenerate-all && pass "initramfs rebuilt (dracut)" || warnr "dracut failed; rebuild manually"
-    else
-      warnr "No mkinitcpio/dracut found; rebuild your initramfs manually"
-    fi
+# Remove any blacklist this project wrote (Legion hhd-lenovo.conf written by setup,
+# ASUS hhd-ally.conf from the README) so the native HID driver loads normally again.
+BL_REMOVED=0
+for BLFILE in "${BLACKLIST_FILE:-}" /etc/modprobe.d/hhd-lenovo.conf /etc/modprobe.d/hhd-ally.conf; do
+  [[ -n "$BLFILE" && -e "$BLFILE" ]] || continue
+  # de-dup if BLACKLIST_FILE equals one of the literals
+  [[ " ${_bl_seen:-} " == *" $BLFILE "* ]] && continue
+  _bl_seen="${_bl_seen:-} $BLFILE"
+  warn "Found $BLFILE (controller HID blacklist)."
+  if confirm "Remove it and rebuild initramfs so the native controller HID driver loads normally?"; then
+    sudo rm -f "$BLFILE" && { pass "Removed $BLFILE"; BL_REMOVED=1; } || warnr "Could not remove $BLFILE"
   else
     info "Kept $BLFILE"
   fi
+done
+if [[ "$BL_REMOVED" -eq 1 ]]; then
+  if command -v mkinitcpio &>/dev/null; then sudo mkinitcpio -P && pass "initramfs rebuilt" || warnr "mkinitcpio failed; rebuild manually"
+  elif command -v dracut &>/dev/null; then sudo dracut --force --regenerate-all && pass "initramfs rebuilt (dracut)" || warnr "dracut failed; rebuild manually"
+  else warnr "No mkinitcpio/dracut found; rebuild your initramfs manually"; fi
 else
-  pass "No hid_asus_ally blacklist present"
+  [[ -z "${_bl_seen:-}" ]] && pass "No controller HID blacklist present"
 fi
 
 # svc_restore <unit> <was_enabled>: unmask, then bring back to its prior state.

@@ -163,7 +163,7 @@ detect_device() {
   DEVICE="unknown"; DEVICE_LABEL="Unknown device"
   TDP_KIND=""; TDP_MODULES=(); TDP_CHECK_PATH=""
   EXTRA_PKGS=(); CONFLICT_PKGS=(); CONFLICT_SVC=""
-  HID_BLACKLIST=(); CONTROLLER_MODULES=(); NEEDS_UDEV_XPAD=0; KERNEL_NOTE=""
+  HID_BLACKLIST=(); NEEDS_HID_BLACKLIST=0; BLACKLIST_FILE=""; NEEDS_UDEV_XPAD=0; KERNEL_NOTE=""
 
   # ---- ASUS ROG Ally: substring match on product_name ----
   # Source: hhd src/hhd/device/rog_ally/__init__.py, adjustor core/const.py ASUS_DATA
@@ -178,8 +178,11 @@ detect_device() {
     # asus-armoury PPT attrs; asusd auto-starts from a udev rule.
     CONFLICT_PKGS=(asusctl rog-control-center supergfxctl)
     CONFLICT_SVC="asusd"
-    # Double-controller fix (ONLY if Steam shows two pads). ASUS-only udev/HID.
+    # Double-controller fix (ONLY if Steam shows two pads). Conditional -> not
+    # auto-applied; documented as a manual/opt-in fix (README).
     HID_BLACKLIST=(hid_asus_ally hid_asus)
+    NEEDS_HID_BLACKLIST=0
+    BLACKLIST_FILE="/etc/modprobe.d/hhd-ally.conf"
     NEEDS_UDEV_XPAD=0
     KERNEL_NOTE="Ally/Ally X: asus-wmi/asus-armoury mainline since 6.19; only the ROG Z13 (2025) hard-requires the Bazzite kernel. Gyro (bmi260) needs the linux-g14/OGC kernel."
     return 0
@@ -203,20 +206,22 @@ detect_device() {
       # No Lenovo analogue of asusd/asusctl exists -> nothing to remove here.
       CONFLICT_PKGS=()
       CONFLICT_SVC=""
-      # No Legion HID module to blacklist. Instead the controllers need xpad bound
-      # via HHD's shipped udev rule (usr/lib/udev/rules.d/83-hhd.rules), esp. the
-      # Go S (VID 1a86 PID e310). Ensure HHD's udev rules are installed.
-      HID_BLACKLIST=()
+      # Legion controllers also need xpad bound via HHD's shipped udev rule
+      # (usr/lib/udev/rules.d/83-hhd.rules), esp. the Go S (VID 1a86 PID e310).
+      #
       # hid_lenovo_go: mainline HID driver for the Legion Go/Go S/Go 2 controllers
-      # (queued for Linux 7.1). Exposes the controllers' config: rumble intensity,
-      # RGB, auto-sleep, calibration, OS mode -- i.e. what HHD drives for Legion.
-      # Auto-loads via modalias when the controller is present on a kernel that has
-      # it; we ensure it's loaded and warn if the kernel is too old.
-      # NOTE: verify the exact module name on the target kernel (may be hid_legion /
-      # hid_lenovo_legion_go depending on the merged naming). src: hid.git for-7.1/lenovo-v2.
-      CONTROLLER_MODULES=(hid_lenovo_go)
+      # (Linux 7.1+). Per user reports, when it AND HHD's controller emulation are
+      # both active the pad plug/unplugs in the gamescope session (the Legion
+      # analogue of the ASUS hid_asus_ally double-controller case). So on Legion we
+      # blacklist it so only HHD's emulated pad is presented. NEEDS_HID_BLACKLIST=1
+      # -> setup offers to apply it; uninstall reverses it.
+      # NOTE: exact module name may differ on the merged kernel (hid_legion /
+      # hid_lenovo_legion_go). UNVERIFIED on hardware. src: hid.git for-7.1/lenovo-v2.
+      HID_BLACKLIST=(hid_lenovo_go)
+      NEEDS_HID_BLACKLIST=1
+      BLACKLIST_FILE="/etc/modprobe.d/hhd-lenovo.conf"
       NEEDS_UDEV_XPAD=1
-      KERNEL_NOTE="Legion deps: acpi_call (TDP) + xpad binding via HHD's udev rule for the controllers, plus the hid_lenovo_go driver (Linux 7.1+) for controller config (rumble/RGB/sleep). On older kernels hid_lenovo_go is absent -> use a 7.1+/Bazzite kernel for full Legion controller config. Go 2 (83N0/83N1) specifics UNCONFIRMED."
+      KERNEL_NOTE="Legion deps: acpi_call (TDP) + xpad binding via HHD's udev rule. On Linux 7.1+ the hid_lenovo_go controller driver exists and (per reports) must be blacklisted so it doesn't fight HHD's emulated pad (gamescope plug/unplug); setup offers this. Go 2 (83N0/83N1) specifics UNCONFIRMED."
       return 0
       ;;
   esac

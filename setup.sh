@@ -221,21 +221,6 @@ for m in "${TDP_MODULES[@]:-}"; do
   fi
 done
 
-# Ensure the device's controller HID driver(s) are loaded (e.g. Legion's
-# hid_lenovo_go for rumble/RGB/config). These auto-load via modalias when the
-# controller is present on a kernel that ships them; modprobe is a best-effort
-# nudge. A missing module usually means the kernel is too old for it.
-for m in "${CONTROLLER_MODULES[@]:-}"; do
-  [[ -z "$m" ]] && continue
-  if mod_loaded "$m"; then
-    pass "$m loaded (controller config driver)"
-  elif sudo modprobe "$m" 2>/dev/null && mod_loaded "$m"; then
-    pass "$m loaded (controller config driver)"
-  else
-    warnr "$m not available on this kernel — Legion controller config (rumble/RGB/sleep) needs Linux 7.1+ (or a kernel with hid_lenovo_go). Auto-loads once present."
-  fi
-done
-
 # Verify the TDP interface path.
 if [[ -n "$TDP_CHECK_PATH" ]]; then
   if [[ -e "$TDP_CHECK_PATH" ]]; then
@@ -261,6 +246,36 @@ if pkg_installed inputplumber; then
   fi
 else
   pass "InputPlumber not installed"
+fi
+
+# ---------- 3b. controller HID blacklist (device-specific, opt-in) ----------
+# Some devices ship a native controller HID driver that fights HHD's emulated
+# pad (double controller / gamescope plug-unplug). Legion's hid_lenovo_go needs
+# this per user reports (NEEDS_HID_BLACKLIST=1); ASUS's hid_asus_ally is only for
+# the conditional double-controller case, so it stays a manual README step (0).
+if [[ "$NEEDS_HID_BLACKLIST" -eq 1 && ${#HID_BLACKLIST[@]} -gt 0 && -n "$BLACKLIST_FILE" ]]; then
+  step "3b. Controller HID blacklist"
+  if [[ -e "$BLACKLIST_FILE" ]]; then
+    pass "Blacklist already present: $BLACKLIST_FILE"
+  else
+    warn "On ${DEVICE_LABEL}, ${HID_BLACKLIST[*]} fights HHD's emulated pad (gamescope plug/unplug)."
+    if confirm "Blacklist ${HID_BLACKLIST[*]} so only HHD's controller is used? (recommended)"; then
+      tmp_bl="$(mktemp)"
+      { echo "# Written by hhd-on-cachyos setup.sh — blacklist native controller HID so HHD's emulated pad is the only one."; for m in "${HID_BLACKLIST[@]}"; do echo "blacklist $m"; done; } > "$tmp_bl"
+      if sudo install -m 0644 "$tmp_bl" "$BLACKLIST_FILE"; then
+        pass "Wrote $BLACKLIST_FILE"
+        if command -v mkinitcpio &>/dev/null; then sudo mkinitcpio -P && pass "initramfs rebuilt" || warnr "mkinitcpio failed; rebuild manually"
+        elif command -v dracut &>/dev/null; then sudo dracut --force --regenerate-all && pass "initramfs rebuilt (dracut)" || warnr "dracut failed; rebuild manually"
+        else warnr "No mkinitcpio/dracut; rebuild initramfs manually"; fi
+        info "Takes effect after the reboot at the end."
+      else
+        failr "Could not write $BLACKLIST_FILE"
+      fi
+      rm -f "$tmp_bl"
+    else
+      warnr "Skipped — if the controller plug/unplugs in gamescope, re-run and accept this."
+    fi
+  fi
 fi
 
 # ---------- 4. power-profiles-daemon + TuneD (shared) ----------
