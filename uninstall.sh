@@ -101,12 +101,15 @@ pass()  { ok "$1";  SUMMARY+=("PASS|$1"); }
 warnr() { warn "$1"; SUMMARY+=("WARN|$1"); }
 failr() { err "$1"; SUMMARY+=("FAIL|$1"); }
 
-confirm() {
+confirm() {  # confirm "<message>" [default: Y|N — defaults to Y]
+  local def="${2:-Y}" hint
   [[ "$ASSUME_YES" -eq 1 ]] && { info "auto-yes: $1"; return 0; }
   if [[ ! -e /dev/tty ]]; then warn "no TTY for prompt; defaulting to NO: $1"; return 1; fi
   local ans
-  printf '\n%s[?]%s %s [y/N] ' "$c_ylw" "$c_reset" "$1" > /dev/tty
+  [[ "$def" == "N" ]] && hint="[y/N]" || hint="[Y/n]"
+  printf '\n%s[?]%s %s %s ' "$c_ylw" "$c_reset" "$1" "$hint" > /dev/tty
   read -r ans < /dev/tty || true
+  ans="${ans:-$def}"                       # empty input -> the default
   if [[ "$ans" =~ ^[Yy]$ ]]; then log "  -> yes"; return 0; else log "  -> no"; return 1; fi
 }
 
@@ -230,7 +233,7 @@ done
 step "4. HHD user config"
 HHD_CFG="${HOME}/.config/hhd"
 if [[ -e "$HHD_CFG" ]]; then
-  if [[ "$PURGE" -eq 1 ]] || confirm "Delete HHD user config at ${HHD_CFG}? (your TDP/button profiles)"; then
+  if [[ "$PURGE" -eq 1 ]] || confirm "Delete HHD user config at ${HHD_CFG}? (your TDP/button profiles)" N; then
     rm -rf "$HHD_CFG" && pass "Removed ${HHD_CFG}" || warnr "Could not remove ${HHD_CFG}"
   else
     info "Kept ${HHD_CFG}"
@@ -399,7 +402,7 @@ cat <<EONOTE
 EONOTE
 echo
 if [[ "$REBOOT_PROMPT" -eq 1 ]]; then
-  if confirm "Reboot now?"; then sudo reboot; else info "Reboot yourself when ready: sudo reboot"; fi
+  if confirm "Reboot now?" N; then sudo reboot; else info "Reboot yourself when ready: sudo reboot"; fi
 else
   info "Skipping reboot prompt (--no-reboot). Reboot before using: sudo reboot"
 fi

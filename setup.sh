@@ -92,12 +92,15 @@ pass()  { ok "$1";  SUMMARY+=("PASS|$1"); }
 warnr() { warn "$1"; SUMMARY+=("WARN|$1"); }
 failr() { err "$1"; SUMMARY+=("FAIL|$1"); }
 
-confirm() {
+confirm() {  # confirm "<message>" [default: Y|N — defaults to Y]
+  local def="${2:-Y}" hint
   [[ "$ASSUME_YES" -eq 1 ]] && { info "auto-yes: $1"; return 0; }
   if [[ ! -e /dev/tty ]]; then warn "no TTY for prompt; defaulting to NO: $1"; return 1; fi
   local ans
-  printf '\n%s[?]%s %s [y/N] ' "$c_ylw" "$c_reset" "$1" > /dev/tty
+  [[ "$def" == "N" ]] && hint="[y/N]" || hint="[Y/n]"
+  printf '\n%s[?]%s %s %s ' "$c_ylw" "$c_reset" "$1" "$hint" > /dev/tty
   read -r ans < /dev/tty || true
+  ans="${ans:-$def}"                       # empty input -> the default
   if [[ "$ans" =~ ^[Yy]$ ]]; then log "  -> yes"; return 0; else log "  -> no"; return 1; fi
 }
 
@@ -135,7 +138,7 @@ if [[ -r /etc/os-release ]] && grep -qi cachyos /etc/os-release; then
   pass "CachyOS detected: $(. /etc/os-release; echo "${PRETTY_NAME:-?}")"
 else
   warnr "Not detected as CachyOS. Untested here."
-  confirm "Continue anyway?" || { info "Aborted."; exit 0; }
+  confirm "Continue anyway?" N || { info "Aborted."; exit 0; }
 fi
 
 # ---------- 1b. detect device ----------
@@ -149,7 +152,7 @@ case "$DEVICE" in
     warnr "Unrecognized handheld: ${DEVICE_LABEL}"
     info "No device profile matched. The shared steps (InputPlumber, PPD, HHD install)"
     info "will still run, but TDP module/package choices may be wrong."
-    confirm "Continue with generic handling?" || { info "Aborted."; exit 0; } ;;
+    confirm "Continue with generic handling?" N || { info "Aborted."; exit 0; } ;;
 esac
 log "profile: TDP_KIND=${TDP_KIND:-none} modules=[${TDP_MODULES[*]:-}] extra_pkgs=[${EXTRA_PKGS[*]:-}] conflicts=[${CONFLICT_PKGS[*]:-}]"
 
@@ -194,12 +197,12 @@ if [[ -n "$KVER" ]] && ! (( KMAJ < 6 || (KMAJ == 6 && KMIN < 19) )); then
   pass "Kernel $KREL (>= 6.19)"
 else
   warnr "Kernel $KREL is older than 6.19; TDP support may not appear."
-  if confirm "Run full update now (pacman -Syu)? You will reboot and re-run after."; then
+  if confirm "Run full update now (pacman -Syu)? You will reboot and re-run after." N; then
     pac -Syu
     ok "Update done. Reboot, then run ./setup.sh again."
     exit 0
   fi
-  confirm "Continue without updating?" || { info "Aborted."; exit 0; }
+  confirm "Continue without updating?" N || { info "Aborted."; exit 0; }
 fi
 [[ -n "$KERNEL_NOTE" ]] && info "$KERNEL_NOTE"
 
@@ -349,7 +352,7 @@ case "$STEAM_SLIDER" in
     # --steam-slider for unattended runs. Only prompt in a real interactive run.
     if [[ "$ASSUME_YES" -eq 1 ]]; then
       info "Skipping the in-Steam slider under --yes. Pass --steam-slider to opt in."
-    elif confirm "Install steamos-manager-hhd for the in-Steam TDP slider (SteamOS/Bazzite Deck menu)? Builds from AUR and replaces stock steamos-manager."; then
+    elif confirm "Install steamos-manager-hhd for the in-Steam TDP slider (SteamOS/Bazzite Deck menu)? Builds from AUR and replaces stock steamos-manager." N; then
       do_slider=1
     else
       info "Skipped."
@@ -492,7 +495,7 @@ cat <<EONOTE
 EONOTE
 echo
 if [[ "$REBOOT_PROMPT" -eq 1 ]]; then
-  if confirm "Reboot now for a clean input handoff?"; then sudo reboot; else info "Reboot yourself when ready: sudo reboot"; fi
+  if confirm "Reboot now for a clean input handoff?" N; then sudo reboot; else info "Reboot yourself when ready: sudo reboot"; fi
 else
   info "Skipping reboot prompt (--no-reboot). Reboot before using: sudo reboot"
 fi
