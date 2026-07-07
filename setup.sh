@@ -400,7 +400,10 @@ done
   && pass "hhd@${REAL_USER} active" \
   || failr "hhd@${REAL_USER} not active (see: systemctl status hhd@${REAL_USER})"
 
-if sudo journalctl -u "hhd@${REAL_USER}" -b --no-pager 2>/dev/null | grep -qiE 'adjustor|tdp'; then
+# Capture first, then grep the string (a `journalctl | grep -q` under pipefail can
+# SIGPIPE when grep matches early and wrongly report a failure).
+jout="$(sudo journalctl -u "hhd@${REAL_USER}" -b --no-pager 2>/dev/null || true)"
+if grep -qiE 'adjustor|tdp' <<<"$jout"; then
   pass "adjustor/TDP activity in the journal"
 else
   warnr "no adjustor/TDP journal lines yet; check again in a moment"

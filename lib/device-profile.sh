@@ -82,17 +82,23 @@ hhd_state_file() { printf '%s/hhd-on-cachyos/pre-setup.env' "${XDG_STATE_HOME:-$
 # Must run as a NORMAL user (makepkg refuses root); it uses sudo itself for pacman.
 # Returns 0 on a successful install, 1 on any failure. Temp dir is always cleaned.
 aur_makepkg_install() {
-  local pkg="$1" ay="${2:-0}" nc=()
-  [[ "$ay" -eq 1 ]] && nc=(--noconfirm)
+  local pkg="$1" ay="${2:-0}"
 
-  # Toolchain needed to build any AUR package.
-  sudo pacman -S --needed "${nc[@]}" git base-devel || return 1
+  # Toolchain needed to build any AUR package (via the tty-aware pac()).
+  ASSUME_YES="$ay" pac -S --needed git base-devel || return 1
 
-  local tmp rc=1 mk=(-si)
+  local tmp rc=1
   tmp="$(mktemp -d)" || return 1
-  [[ "$ay" -eq 1 ]] && mk+=(--noconfirm)
   if git clone --depth 1 "https://aur.archlinux.org/${pkg}.git" "$tmp/${pkg}"; then
-    ( cd "$tmp/${pkg}" && makepkg "${mk[@]}" ) && rc=0
+    # makepkg -si runs an inner `sudo pacman` that prompts; under `curl | bash`
+    # stdin is the pipe, so read makepkg's prompts from /dev/tty (or --noconfirm).
+    if [[ "$ay" -eq 1 ]]; then
+      ( cd "$tmp/${pkg}" && makepkg -si --noconfirm ) && rc=0
+    elif [[ -e /dev/tty ]]; then
+      ( cd "$tmp/${pkg}" && makepkg -si </dev/tty ) && rc=0
+    else
+      ( cd "$tmp/${pkg}" && makepkg -si --noconfirm ) && rc=0
+    fi
   fi
   rm -rf "$tmp"
   return "$rc"

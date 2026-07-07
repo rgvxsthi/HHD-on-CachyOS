@@ -148,6 +148,10 @@ fi
 # HHD UI (the desktop app / overlay front-end)
 if pkg_installed hhd-ui; then pass "hhd-ui installed (desktop app + gamescope overlay TDP/fan/RGB controls)"; else fail "hhd-ui NOT installed (no HHD app UI)"; fi
 
+# pre-setup snapshot (lets uninstall.sh restore the exact pre-install state)
+if [[ -r "$(hhd_state_file)" ]]; then pass "pre-setup snapshot present — uninstall will restore the exact pre-install state"
+else echo "  pre-setup snapshot: none (uninstall falls back to CachyOS defaults; only setups from v1.0.4+ write one)"; fi
+
 # ============================================================================
 sec "5. In-Steam TDP slider (optional SteamOS/Bazzite integration)"
 # ============================================================================

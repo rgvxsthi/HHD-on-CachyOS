@@ -52,8 +52,9 @@ else die "need curl or wget."; fi
 # ---- resolve the ref: explicit HHD_REF, else latest release tag, else main ----
 REF="${HHD_REF:-}"
 if [[ -z "$REF" ]]; then
-  tag="$("${DL[@]}" "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
-        | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  # Capture the API response first, then parse (avoid curl SIGPIPE from `| grep -m1`).
+  api="$("${DL[@]}" "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)"
+  tag="$(printf '%s' "$api" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
   if [[ -n "$tag" ]]; then REF="$tag"; else warn "no release found via API; falling back to main"; REF="main"; fi
 fi
 say "repo=${REPO} ref=${REF} dir=${DIR}"
