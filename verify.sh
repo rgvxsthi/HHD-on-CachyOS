@@ -204,8 +204,10 @@ elif [[ "$DEVICE" == "lenovo" ]]; then
   fi
   echo
   echo "${c_bold}MANUAL CHECK (Legion controllers):${c_reset}"
-  echo "  No HID module to blacklist on Legion. If the controller is missing, the"
-  echo "  xpad udev binding (above) is the thing to check. Go S = VID 1a86 PID e310."
+  echo "  If the pad plug/unplugs in gamescope, the controller HID driver"
+  echo "  (hid_lenovo_go / hid_legion, Linux 7.1+) needs blacklisting — re-run setup."
+  echo "  If the controller is missing entirely, check the xpad udev binding (above)."
+  echo "  Go S = VID 1a86 PID e310."
 fi
 
 # ============================================================================
