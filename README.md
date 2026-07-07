@@ -30,18 +30,18 @@ Installing HHD "by the generic Arch instructions" on a fresh CachyOS Handheld in
 Run this on the handheld (in a terminal, so the prompts and reboot work):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-ROG-Ally/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash
 ```
 
-It downloads the project (including the `lib/` folder the scripts need) to `~/HHD-on-ROG-Ally` and runs `setup.sh`. Pass an action or flags after `-s --`:
+It downloads the project (including the `lib/` folder the scripts need) to `~/HHD-on-CachyOS` and runs `setup.sh`. Pass an action or flags after `-s --`:
 
 ```bash
 # install + the in-Steam TDP slider
-curl -fsSL .../install.sh | bash -s -- --steam-slider
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- --steam-slider
 # just run the health check
-curl -fsSL .../install.sh | bash -s -- verify
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- verify
 # uninstall
-curl -fsSL .../install.sh | bash -s -- uninstall
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- uninstall
 ```
 
 By default it fetches the latest tagged release; override with `HHD_REF=main` (branch/tag) or `HHD_DIR=/path` (install location). `HHD_NO_RUN=1` downloads without running.
@@ -49,8 +49,8 @@ By default it fetches the latest tagged release; override with `HHD_REF=main` (b
 ## Quick start (git clone)
 
 ```bash
-git clone https://github.com/rgvxsthi/HHD-on-ROG-Ally.git
-cd HHD-on-ROG-Ally
+git clone https://github.com/rgvxsthi/HHD-on-CachyOS.git
+cd HHD-on-CachyOS
 chmod +x setup.sh verify.sh uninstall.sh
 ./setup.sh            # interactive; add --debug to trace every step
 ```

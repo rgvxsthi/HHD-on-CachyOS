@@ -2,30 +2,30 @@
 # Re-exec under bash if started with sh/dash.
 if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 #
-# install.sh - one-line bootstrap for HHD-on-ROG-Ally.
+# install.sh - one-line bootstrap for HHD-on-CachyOS.
 #
 # Downloads the whole project (setup.sh, verify.sh, uninstall.sh AND the lib/
 # folder they depend on) into a directory, then runs the action you asked for.
 #
 # Usage (pick one):
-#   curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-ROG-Ally/main/install.sh | bash
-#   curl -fsSL .../install.sh | bash -s -- --steam-slider     # pass flags to setup
-#   curl -fsSL .../install.sh | bash -s -- verify             # run verify.sh
-#   curl -fsSL .../install.sh | bash -s -- uninstall           # run uninstall.sh
+#   curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- --steam-slider
+#   curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- verify
+#   curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- uninstall
 #
 # The first argument chooses the action (setup | verify | uninstall); anything
 # else is passed through to that script. With no action, it runs setup.
 #
 # Environment overrides:
-#   HHD_DIR   install location            (default: $HOME/HHD-on-ROG-Ally)
+#   HHD_DIR   install location            (default: $HOME/HHD-on-CachyOS)
 #   HHD_REF   git tag/branch to fetch      (default: latest release, else main)
-#   HHD_REPO  owner/repo                    (default: rgvxsthi/HHD-on-ROG-Ally)
+#   HHD_REPO  owner/repo                    (default: rgvxsthi/HHD-on-CachyOS)
 #   HHD_NO_RUN=1  download only, do not run anything
 
 set -uo pipefail
 
-REPO="${HHD_REPO:-rgvxsthi/HHD-on-ROG-Ally}"
-DIR="${HHD_DIR:-$HOME/HHD-on-ROG-Ally}"
+REPO="${HHD_REPO:-rgvxsthi/HHD-on-CachyOS}"
+DIR="${HHD_DIR:-$HOME/HHD-on-CachyOS}"
 
 c_b=$'\e[1m'; c_y=$'\e[33m'; c_r=$'\e[31m'; c_g=$'\e[32m'; c_0=$'\e[0m'
 say()  { printf '%s[hhd]%s %s\n' "$c_b" "$c_0" "$*"; }
