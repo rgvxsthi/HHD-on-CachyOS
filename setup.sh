@@ -302,7 +302,7 @@ step "6. Install hhd, adjustor, hhd-ui${EXTRA_PKGS:+ + extras}"
 INSTALL_PKGS=(hhd adjustor hhd-ui "${EXTRA_PKGS[@]:-}")
 # drop any empty element from the extras expansion
 CLEAN_PKGS=(); for p in "${INSTALL_PKGS[@]}"; do [[ -n "$p" ]] && CLEAN_PKGS+=("$p"); done
-(( ${#EXTRA_PKGS[@]:-0} > 0 )) && info "Device extras: ${EXTRA_PKGS[*]} (Legion needs acpi_call for TDP)"
+(( ${#EXTRA_PKGS[@]} > 0 )) && info "Device extras: ${EXTRA_PKGS[*]} (Legion needs acpi_call for TDP)"
 if pac -S --needed "${CLEAN_PKGS[@]}"; then
   pass "Packages installed: ${CLEAN_PKGS[*]}"
 else
