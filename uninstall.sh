@@ -6,13 +6,17 @@ if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 #                on CachyOS. Auto-detects ASUS ROG Ally vs Lenovo Legion Go and
 #                reverses exactly what setup.sh did for that device.
 #
-# Reverses, in reverse order, everything setup.sh changes:
+# It restores the machine to its PRE-SETUP state using the snapshot setup.sh
+# writes before it changes anything (falling back to known CachyOS Handheld
+# defaults if the snapshot is missing). In order it:
 #   - disables and stops hhd@<user>
-#   - removes hhd, adjustor, hhd-ui (+ device extras like acpi_call-dkms)
-#   - unmasks power-profiles-daemon / tuned
-#   - unmasks InputPlumber and (optionally) reinstalls + re-enables it
-#   - (optionally) reinstalls the vendor userspace stack (ASUS only) + re-enables its service
-#   - removes the hid_asus_ally blacklist from the README (if present) + rebuilds initramfs
+#   - removes steamos-manager-hhd-git (the slider) BEFORE hhd (it depends on hhd),
+#     then removes hhd, adjustor, hhd-ui (+ device extras like acpi_call-dkms)
+#   - unmasks + restores power-profiles-daemon / tuned to their prior state
+#   - restores InputPlumber if it was installed before setup
+#   - reinstalls stock steamos-manager if the slider replaced it (CachyOS default)
+#   - reinstalls ONLY the vendor packages setup actually removed (never guesses)
+#   - removes the hid_asus_ally blacklist (if present) + rebuilds initramfs
 #   - (optionally) deletes the HHD user config and setup logs
 #
 # Refuses to run as root, asks before every destructive step, never reboots
@@ -140,6 +144,26 @@ fi
 detect_device
 pass "Device: ${DEVICE_LABEL} (profile=${DEVICE})"
 
+# ---- load the pre-setup snapshot (written by setup.sh) for a faithful restore ----
+# Defaults assume the CachyOS Handheld image shipped InputPlumber + stock
+# steamos-manager (verified true), so with no snapshot we still restore those.
+STATE_FILE="$(hhd_state_file)"
+PRE_INPUTPLUMBER_INSTALLED=1; PRE_INPUTPLUMBER_ENABLED="enabled"
+PRE_PPD_INSTALLED=1; PRE_PPD_ENABLED="enabled"
+PRE_TUNED_INSTALLED=0; PRE_TUNED_ENABLED="unknown"
+PRE_STEAMOS_STOCK_INSTALLED=1
+PRE_VENDOR_REMOVED=""
+PRE_SLIDER_INSTALLED=0
+if [[ -r "$STATE_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$STATE_FILE"
+  pass "Loaded pre-setup snapshot ($STATE_FILE) — restoring exactly what was here"
+  HAVE_STATE=1
+else
+  warnr "No pre-setup snapshot found; restoring known CachyOS Handheld defaults (InputPlumber + steamos-manager, no vendor stack)"
+  HAVE_STATE=0
+fi
+
 info "This removes HHD and (unless --no-restore) unmasks PPD/InputPlumber and puts"
 info "the vendor userspace stack back. It reverses what setup.sh did."
 confirm "Proceed with uninstall?" || { info "Aborted."; exit 0; }
@@ -233,80 +257,93 @@ else
   pass "No hid_asus_ally blacklist present"
 fi
 
-# ---------- 6. unmask power-profiles-daemon / tuned ----------
+# svc_restore <unit> <was_enabled>: unmask, then bring back to its prior state.
+# Many of these units (PPD, InputPlumber) are D-Bus/socket-activated with no
+# [Install] section, so `enable` fails though they work — fall back to start.
+svc_restore() {
+  local svc="$1" was="$2" short="${1%.service}"
+  svc_masked "$svc" && { sudo systemctl unmask "$svc" 2>/dev/null && pass "$short unmasked" || warnr "Could not unmask $short"; }
+  case "$was" in
+    disabled|masked|unknown|"")
+      sudo systemctl start "$svc" 2>/dev/null && info "$short started (was not enabled; D-Bus/socket activated)" || info "$short left to D-Bus-activate on demand" ;;
+    *)
+      if sudo systemctl enable --now "$svc" 2>/dev/null; then pass "$short enabled + started"
+      elif sudo systemctl start "$svc" 2>/dev/null; then pass "$short started (no [Install]; D-Bus activated)"
+      else info "$short will D-Bus-activate on demand"; fi ;;
+  esac
+}
+
+# ---------- 6. restore power-profiles-daemon / tuned ----------
 step "6. Restore power-profiles-daemon / TuneD"
 if [[ "$RESTORE" -eq 1 ]]; then
-  for svc in "$PPD_SVC" "$TUNED_SVC"; do
-    short="${svc%.service}"
-    if svc_masked "$svc"; then
-      sudo systemctl unmask "$svc" 2>/dev/null && pass "$short unmasked" || warnr "Could not unmask $short"
-      if confirm "Enable and start $short now (restore original power management)?"; then
-        # PPD is often D-Bus-activated with no [Install] section, so `enable`
-        # fails though it still works. Fall back to start, then to a note.
-        if sudo systemctl enable --now "$svc" 2>/dev/null; then pass "$short enabled"
-        elif sudo systemctl start "$svc" 2>/dev/null; then pass "$short started (D-Bus activated; nothing to enable)"
-        else info "$short left unmasked; it will D-Bus-activate on demand"; fi
-      fi
-    else
-      pass "$short not masked"
-    fi
-  done
+  [[ "$PRE_PPD_INSTALLED" -eq 1 ]] && svc_restore "$PPD_SVC" "$PRE_PPD_ENABLED" || { svc_masked "$PPD_SVC" && sudo systemctl unmask "$PPD_SVC" 2>/dev/null; pass "power-profiles-daemon: nothing to restore"; }
+  if [[ "$PRE_TUNED_INSTALLED" -eq 1 ]]; then svc_restore "$TUNED_SVC" "$PRE_TUNED_ENABLED"; else
+    svc_masked "$TUNED_SVC" && { sudo systemctl unmask "$TUNED_SVC" 2>/dev/null && pass "tuned unmasked"; } || pass "tuned: nothing to restore"
+  fi
 else
   info "--no-restore: leaving PPD/tuned masked as-is"
 fi
 
-# ---------- 7. unmask + restore InputPlumber ----------
+# ---------- 7. restore InputPlumber ----------
 step "7. InputPlumber"
-if svc_masked inputplumber; then
-  sudo systemctl unmask inputplumber && pass "InputPlumber unmasked" || warnr "Could not unmask InputPlumber"
+svc_masked inputplumber && { sudo systemctl unmask inputplumber 2>/dev/null && pass "InputPlumber unmasked" || warnr "Could not unmask InputPlumber"; }
+if [[ "$RESTORE" -eq 1 && "$PRE_INPUTPLUMBER_INSTALLED" -eq 1 ]]; then
+  if pkg_installed inputplumber; then pass "InputPlumber already installed"
+  elif pac -S --needed inputplumber; then pass "InputPlumber reinstalled"; else warnr "Could not reinstall InputPlumber"; fi
+  pkg_installed inputplumber && svc_restore inputplumber "$PRE_INPUTPLUMBER_ENABLED"
+elif [[ "$RESTORE" -eq 1 ]]; then
+  info "InputPlumber was not installed before setup — leaving it out"
 else
-  pass "InputPlumber not masked"
-fi
-if [[ "$RESTORE" -eq 1 ]]; then
-  if pkg_installed inputplumber; then
-    pass "InputPlumber already installed"
-  elif confirm "Reinstall InputPlumber (CachyOS Handheld ships it by default)?"; then
-    if pac -S --needed inputplumber; then pass "InputPlumber reinstalled"; else warnr "Could not reinstall InputPlumber"; fi
-  else
-    info "Skipped reinstalling InputPlumber"
-  fi
-  if pkg_installed inputplumber && confirm "Enable and start InputPlumber now?"; then
-    sudo systemctl enable --now inputplumber 2>/dev/null \
-      && pass "InputPlumber enabled and started" || warnr "Could not enable InputPlumber"
-  fi
-else
-  info "--no-restore: leaving InputPlumber removed/unmasked as-is"
+  info "--no-restore: leaving InputPlumber as-is"
 fi
 
-# ---------- 8. restore vendor userspace stack (device-specific) ----------
-step "8. Vendor userspace stack"
-if [[ "$RESTORE" -eq 1 ]] && (( ${#CONFLICT_PKGS[@]} > 0 )); then
+# ---------- 8. restore stock steamos-manager ----------
+# The slider (steamos-manager-hhd-git) replaced stock steamos-manager, which
+# CachyOS Handheld ships by default. Put stock back (it was removed in step 3).
+step "8. Stock steamos-manager"
+if [[ "$RESTORE" -eq 1 && "$PRE_STEAMOS_STOCK_INSTALLED" -eq 1 ]]; then
+  if pkg_installed "$STEAMOS_STOCK_PKG"; then
+    pass "${STEAMOS_STOCK_PKG} already installed"
+  elif pac -S --needed "$STEAMOS_STOCK_PKG"; then
+    pass "${STEAMOS_STOCK_PKG} reinstalled (CachyOS default)"
+  else
+    warnr "Could not reinstall ${STEAMOS_STOCK_PKG}"
+  fi
+  pkg_installed "$STEAMOS_STOCK_PKG" && svc_restore "$STEAMOS_STOCK_SVC" "enabled"
+elif [[ "$RESTORE" -eq 1 ]]; then
+  info "Stock steamos-manager was not present before setup — leaving it out"
+else
+  info "--no-restore: not restoring stock steamos-manager"
+fi
+
+# ---------- 9. restore vendor userspace stack (ONLY what setup removed) ----------
+step "9. Vendor userspace stack"
+if [[ "$RESTORE" -eq 1 && -n "${PRE_VENDOR_REMOVED// }" ]]; then
+  read -ra VENDOR_LIST <<< "$PRE_VENDOR_REMOVED"
   MISSING=()
-  for p in "${CONFLICT_PKGS[@]}"; do pkg_installed "$p" || MISSING+=("$p"); done
+  for p in "${VENDOR_LIST[@]}"; do pkg_installed "$p" || MISSING+=("$p"); done
   if (( ${#MISSING[@]} > 0 )); then
-    warn "Not installed: ${MISSING[*]}"
-    info "NOTE: only reinstall if you actually had them before. They fight adjustor"
-    info "over TDP, so many setups intentionally do without them."
-    if confirm "Reinstall ${MISSING[*]}?"; then
-      if pac -S --needed "${MISSING[@]}"; then pass "Vendor stack reinstalled"; else warnr "Could not reinstall (may be AUR: paru -S ...)"; fi
-    else
-      info "Skipped reinstalling vendor stack"
-    fi
+    info "setup removed these; restoring: ${MISSING[*]}"
+    if pac -S --needed "${MISSING[@]}"; then pass "Vendor stack restored"; else warnr "Could not restore (may be AUR: paru -S ...)"; fi
   else
-    pass "Vendor userspace stack already present"
+    pass "Vendor stack already present"
   fi
-  if [[ -n "$CONFLICT_SVC" ]] && pkg_installed "${CONFLICT_PKGS[0]}" && confirm "Enable and start ${CONFLICT_SVC} now?"; then
-    sudo systemctl enable --now "$CONFLICT_SVC" 2>/dev/null \
-      && pass "${CONFLICT_SVC} enabled and started" || warnr "Could not enable ${CONFLICT_SVC}"
+  if [[ -n "$CONFLICT_SVC" ]] && pkg_installed "${VENDOR_LIST[0]}"; then
+    sudo systemctl enable --now "$CONFLICT_SVC" 2>/dev/null && pass "${CONFLICT_SVC} enabled" || info "${CONFLICT_SVC} not enabled"
   fi
-elif (( ${#CONFLICT_PKGS[@]} == 0 )); then
-  pass "No vendor userspace stack for this device (${DEVICE}) — nothing to restore"
+elif [[ "$RESTORE" -eq 1 ]]; then
+  pass "No vendor packages were removed by setup — nothing to restore"
 else
-  info "--no-restore: not reinstalling the vendor userspace stack"
+  info "--no-restore: not restoring the vendor userspace stack"
 fi
 
-# ---------- 9. logs ----------
-step "9. Setup logs"
+# ---------- 9b. consume the pre-setup snapshot ----------
+if [[ "$RESTORE" -eq 1 && -n "$STATE_FILE" && -e "$STATE_FILE" ]]; then
+  rm -f "$STATE_FILE" 2>/dev/null && info "Removed the pre-setup snapshot (restore complete)"
+fi
+
+# ---------- 10. logs ----------
+step "10. Setup logs"
 if compgen -G "${HOME}/hhd-setup-*.log" >/dev/null; then
   if [[ "$PURGE" -eq 1 ]] || confirm "Delete old ~/hhd-setup-*.log files?"; then
     rm -f "${HOME}"/hhd-setup-*.log && pass "Removed setup logs" || warnr "Could not remove setup logs"
@@ -318,7 +355,7 @@ else
 fi
 
 # ---------- 10. verify ----------
-step "10. Verify"
+step "11. Verify"
 pkg_installed hhd && failr "hhd still installed" || pass "hhd removed"
 [[ "$(systemctl is-active "hhd@${REAL_USER}" 2>/dev/null || true)" == "active" ]] \
   && failr "hhd@${REAL_USER} still active" || pass "hhd@${REAL_USER} not active"

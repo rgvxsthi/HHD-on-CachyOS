@@ -153,6 +153,33 @@ case "$DEVICE" in
 esac
 log "profile: TDP_KIND=${TDP_KIND:-none} modules=[${TDP_MODULES[*]:-}] extra_pkgs=[${EXTRA_PKGS[*]:-}] conflicts=[${CONFLICT_PKGS[*]:-}]"
 
+# ---------- 1c. snapshot pre-setup state (so uninstall restores faithfully) ----------
+# Captured BEFORE any change. uninstall.sh reads this to put back exactly what
+# was here (InputPlumber, stock steamos-manager, PPD/tuned state, vendor pkgs).
+STATE_FILE="$(hhd_state_file)"
+if mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null; then
+  {
+    echo "# hhd-on-cachyos pre-setup snapshot (used by uninstall.sh). Do not edit."
+    echo "PRE_SAVED_AT='$(date -Is)'"
+    echo "PRE_DEVICE='$DEVICE'"
+    echo "PRE_INPUTPLUMBER_INSTALLED=$(pkg_installed inputplumber && echo 1 || echo 0)"
+    echo "PRE_INPUTPLUMBER_ENABLED='$(systemctl is-enabled inputplumber 2>/dev/null || echo unknown)'"
+    echo "PRE_PPD_INSTALLED=$(pkg_installed power-profiles-daemon && echo 1 || echo 0)"
+    echo "PRE_PPD_ENABLED='$(systemctl is-enabled power-profiles-daemon 2>/dev/null || echo unknown)'"
+    echo "PRE_TUNED_INSTALLED=$(pkg_installed tuned && echo 1 || echo 0)"
+    echo "PRE_TUNED_ENABLED='$(systemctl is-enabled tuned 2>/dev/null || echo unknown)'"
+    echo "PRE_STEAMOS_STOCK_INSTALLED=$(pkg_installed "$STEAMOS_STOCK_PKG" && echo 1 || echo 0)"
+    echo "PRE_VENDOR_REMOVED=''"
+    echo "PRE_SLIDER_INSTALLED=0"
+  } > "$STATE_FILE"
+  pass "Saved pre-setup snapshot ($STATE_FILE) for a faithful uninstall"
+else
+  warnr "Could not write pre-setup snapshot; uninstall will fall back to CachyOS defaults"
+  STATE_FILE=""
+fi
+# helper: record a key=value action into the snapshot (last line wins when sourced)
+state_record() { [[ -n "$STATE_FILE" ]] && printf '%s\n' "$1" >> "$STATE_FILE"; }
+
 # ---------- 2. kernel + TDP backend ----------
 step "2. Kernel and TDP backend"
 KREL="$(uname -r)"; log "kernel: $KREL"
@@ -251,7 +278,10 @@ if (( ${#CONFLICT_PKGS[@]} > 0 )); then
     warn "Found: ${FOUND_PKGS[*]} (fights adjustor over the platform profile)"
     if confirm "Disable ${CONFLICT_SVC:-service} and remove these?"; then
       [[ -n "$CONFLICT_SVC" ]] && sudo systemctl disable --now "$CONFLICT_SVC" 2>/dev/null || true
-      if pac -R "${FOUND_PKGS[@]}"; then pass "Vendor userspace stack removed"; else failr "Could not remove vendor stack"; fi
+      if pac -R "${FOUND_PKGS[@]}"; then
+        pass "Vendor userspace stack removed"
+        state_record "PRE_VENDOR_REMOVED='${FOUND_PKGS[*]}'"
+      else failr "Could not remove vendor stack"; fi
     else
       warnr "Vendor stack left in place; it may fight adjustor for TDP"
     fi
@@ -333,6 +363,7 @@ if [[ "$do_slider" -eq 1 ]]; then
     info "(installs git/base-devel + pulls rust/clang; this takes a while)..."
     if aur_makepkg_install "$STEAMOS_HHD_PKG" "$ASSUME_YES"; then
       pass "${STEAMOS_HHD_PKG} installed (replaces stock steamos-manager)"
+      state_record "PRE_SLIDER_INSTALLED=1"
       sudo systemctl enable --now "$STEAMOS_HHD_SYS_SVC" 2>/dev/null \
         && pass "system steamos-manager.service enabled" \
         || warnr "could not enable system steamos-manager.service"

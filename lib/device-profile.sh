@@ -65,6 +65,15 @@ STEAMOS_MGR_ACTION="none"   # never touch stock steamos-manager
 STEAMOS_HHD_PKG="steamos-manager-hhd-git"
 STEAMOS_HHD_USER_SVC="steamos-manager.service"    # systemctl --user
 STEAMOS_HHD_SYS_SVC="steamos-manager.service"     # system (root)
+# Stock steamos-manager: CachyOS Handheld DOES ship this by default (cachyos repo).
+# The slider (STEAMOS_HHD_PKG) provides+conflicts it, so installing the slider
+# REPLACES stock steamos-manager. On uninstall we reinstall stock if it was there.
+STEAMOS_STOCK_PKG="steamos-manager"
+STEAMOS_STOCK_SVC="steamos-manager.service"
+
+# hhd_state_file -> path where setup.sh records the pre-install snapshot that
+# uninstall.sh reads to restore the machine to exactly its pre-setup state.
+hhd_state_file() { printf '%s/hhd-on-cachyos/pre-setup.env' "${XDG_STATE_HOME:-$HOME/.local/state}"; }
 
 # aur_makepkg_install <pkgbase> <assume_yes 0|1> -> builds and installs an AUR
 # package directly with git + makepkg. No AUR helper (paru/yay) required.
