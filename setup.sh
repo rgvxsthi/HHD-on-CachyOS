@@ -157,7 +157,12 @@ log "profile: TDP_KIND=${TDP_KIND:-none} modules=[${TDP_MODULES[*]:-}] extra_pkg
 # Captured BEFORE any change. uninstall.sh reads this to put back exactly what
 # was here (InputPlumber, stock steamos-manager, PPD/tuned state, vendor pkgs).
 STATE_FILE="$(hhd_state_file)"
-if mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null; then
+if [[ -e "$STATE_FILE" ]]; then
+  # Write-once: a re-run must NOT clobber the true pre-install baseline with
+  # already-modified state. uninstall.sh removes the snapshot, so a fresh setup
+  # after an uninstall writes a new one.
+  pass "Pre-setup snapshot already exists ($STATE_FILE); keeping the original"
+elif mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null; then
   {
     echo "# hhd-on-cachyos pre-setup snapshot (used by uninstall.sh). Do not edit."
     echo "PRE_SAVED_AT='$(date -Is)'"
