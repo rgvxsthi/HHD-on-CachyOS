@@ -25,7 +25,28 @@ Installing HHD "by the generic Arch instructions" on a fresh CachyOS Handheld in
 3. **`power-profiles-daemon` (and `tuned`) fight adjustor** over the power profile and the PowerProfiles D-Bus name — adjustor *is* a drop-in PPD replacement — so if either runs, **TDP silently fails**. They must be masked. See [Troubleshooting](#power-profiles-daemon--tuned-silent-tdp-failure).
 4. **`systemctl enable` without `--now`** arms the service for next boot but never starts it in the current session, so it looks dead.
 
-## Quick start (script)
+## Quick start (one-liner)
+
+Run this on the handheld (in a terminal, so the prompts and reboot work):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-ROG-Ally/main/install.sh | bash
+```
+
+It downloads the project (including the `lib/` folder the scripts need) to `~/HHD-on-ROG-Ally` and runs `setup.sh`. Pass an action or flags after `-s --`:
+
+```bash
+# install + the in-Steam TDP slider
+curl -fsSL .../install.sh | bash -s -- --steam-slider
+# just run the health check
+curl -fsSL .../install.sh | bash -s -- verify
+# uninstall
+curl -fsSL .../install.sh | bash -s -- uninstall
+```
+
+By default it fetches the latest tagged release; override with `HHD_REF=main` (branch/tag) or `HHD_DIR=/path` (install location). `HHD_NO_RUN=1` downloads without running.
+
+## Quick start (git clone)
 
 ```bash
 git clone https://github.com/rgvxsthi/HHD-on-ROG-Ally.git
