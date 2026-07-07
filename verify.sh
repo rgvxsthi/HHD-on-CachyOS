@@ -194,11 +194,13 @@ elif [[ "$DEVICE" == "lenovo" ]]; then
   # Legion needs xpad + HHD udev rule
   [[ -e /usr/lib/udev/rules.d/83-hhd.rules ]] && pass "HHD udev rules present (83-hhd.rules; xpad binding)" || fail "HHD udev rules missing (/usr/lib/udev/rules.d/83-hhd.rules) — Legion controller may not bind"
   mod_loaded xpad && pass "xpad loaded" || warn "xpad not loaded (Legion controllers bind via xpad)"
-  # hid_lenovo_go must be blacklisted so it doesn't fight HHD's pad (gamescope plug/unplug)
-  if [[ "$NEEDS_HID_BLACKLIST" -eq 1 && -n "$BLACKLIST_FILE" ]]; then
-    if [[ -e "$BLACKLIST_FILE" ]]; then pass "controller blacklist present ($BLACKLIST_FILE: ${HID_BLACKLIST[*]})"
-    elif mod_loaded hid_lenovo_go; then warn "hid_lenovo_go loaded + NOT blacklisted — expect gamescope controller plug/unplug; re-run setup to apply the blacklist"
-    else echo "  controller blacklist: not applied (hid_lenovo_go absent on this kernel; only needed on Linux 7.1+)"; fi
+  # The Legion controller HID driver must be blacklisted so it doesn't fight HHD's
+  # emulated pad (gamescope plug/unplug). Discover it by pattern (name varies).
+  if [[ "$NEEDS_HID_BLACKLIST" -eq 1 && -n "$BLACKLIST_FILE" && -n "${HID_BLACKLIST_PATTERN:-}" ]]; then
+    mapfile -t bl_mods < <(hid_modules_matching "$HID_BLACKLIST_PATTERN")
+    if [[ -e "$BLACKLIST_FILE" ]]; then pass "controller blacklist present ($BLACKLIST_FILE)"
+    elif (( ${#bl_mods[@]} > 0 )); then warn "controller HID driver(s) ${bl_mods[*]} present + NOT blacklisted — expect gamescope plug/unplug; re-run setup to apply the blacklist"
+    else echo "  controller blacklist: not needed (no /$HID_BLACKLIST_PATTERN/ module on this kernel; only Linux 7.1+)"; fi
   fi
   echo
   echo "${c_bold}MANUAL CHECK (Legion controllers):${c_reset}"

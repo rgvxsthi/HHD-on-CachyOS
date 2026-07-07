@@ -146,6 +146,22 @@ pac() {
   else sudo pacman --noconfirm "$@"; fi
 }
 
+# hid_modules_matching <extended-regex> -> print kernel module names (underscore
+# form) that exist in THIS kernel's module tree or are currently loaded and match
+# the regex, one per line. Lets us blacklist the Legion controller HID driver
+# whose exact name varies across kernels (hid_lenovo_go / hid_legion /
+# hid_lenovo_legion_go) without hardcoding it. Keep the regex specific: e.g.
+# 'legion|lenovo_go' matches the Go controller driver but NOT hid_lenovo (the
+# unrelated ThinkPad keyboard/TrackPoint driver).
+hid_modules_matching() {
+  local re="$1"
+  {
+    find "/lib/modules/$(uname -r)" -type f \( -name '*.ko' -o -name '*.ko.*' \) 2>/dev/null \
+      | sed 's#.*/##; s/\.ko.*$//; s/-/_/g'
+    lsmod 2>/dev/null | awk 'NR>1{print $1}'
+  } | grep -iE "$re" | sort -u
+}
+
 # mod_loaded <module> -> 0 if the kernel module is loaded.
 # Uses awk (consumes all of lsmod) instead of `lsmod | grep -q`: under
 # `set -o pipefail`, grep -q exits on first match, lsmod gets SIGPIPE (141), and
@@ -163,7 +179,7 @@ detect_device() {
   DEVICE="unknown"; DEVICE_LABEL="Unknown device"
   TDP_KIND=""; TDP_MODULES=(); TDP_CHECK_PATH=""
   EXTRA_PKGS=(); CONFLICT_PKGS=(); CONFLICT_SVC=""
-  HID_BLACKLIST=(); NEEDS_HID_BLACKLIST=0; BLACKLIST_FILE=""; NEEDS_UDEV_XPAD=0; KERNEL_NOTE=""
+  HID_BLACKLIST=(); HID_BLACKLIST_PATTERN=""; NEEDS_HID_BLACKLIST=0; BLACKLIST_FILE=""; NEEDS_UDEV_XPAD=0; KERNEL_NOTE=""
 
   # ---- ASUS ROG Ally: substring match on product_name ----
   # Source: hhd src/hhd/device/rog_ally/__init__.py, adjustor core/const.py ASUS_DATA
@@ -215,9 +231,12 @@ detect_device() {
       # analogue of the ASUS hid_asus_ally double-controller case). So on Legion we
       # blacklist it so only HHD's emulated pad is presented. NEEDS_HID_BLACKLIST=1
       # -> setup offers to apply it; uninstall reverses it.
-      # NOTE: exact module name may differ on the merged kernel (hid_legion /
-      # hid_lenovo_legion_go). UNVERIFIED on hardware. src: hid.git for-7.1/lenovo-v2.
-      HID_BLACKLIST=(hid_lenovo_go)
+      # The exact module name varies across kernels, so we DISCOVER it at runtime
+      # by pattern instead of hardcoding: 'legion|lenovo_go' matches hid_lenovo_go /
+      # hid_legion / hid_lenovo_legion_go but NOT hid_lenovo (ThinkPad driver).
+      # UNVERIFIED on hardware. src: hid.git for-7.1/lenovo-v2, user report.
+      HID_BLACKLIST=()
+      HID_BLACKLIST_PATTERN='legion|lenovo_go'
       NEEDS_HID_BLACKLIST=1
       BLACKLIST_FILE="/etc/modprobe.d/hhd-lenovo.conf"
       NEEDS_UDEV_XPAD=1

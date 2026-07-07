@@ -253,21 +253,28 @@ fi
 # pad (double controller / gamescope plug-unplug). Legion's hid_lenovo_go needs
 # this per user reports (NEEDS_HID_BLACKLIST=1); ASUS's hid_asus_ally is only for
 # the conditional double-controller case, so it stays a manual README step (0).
-if [[ "$NEEDS_HID_BLACKLIST" -eq 1 && ${#HID_BLACKLIST[@]} -gt 0 && -n "$BLACKLIST_FILE" ]]; then
+if [[ "$NEEDS_HID_BLACKLIST" -eq 1 && -n "$BLACKLIST_FILE" && -n "${HID_BLACKLIST_PATTERN:-}" ]]; then
   step "3b. Controller HID blacklist"
-  if [[ -e "$BLACKLIST_FILE" ]]; then
-    pass "Blacklist already present: $BLACKLIST_FILE"
+  # Discover the actual controller HID module(s) on this kernel by pattern, so we
+  # don't hardcode a name that varies (hid_lenovo_go / hid_legion / ...).
+  mapfile -t BL_MODS < <(hid_modules_matching "$HID_BLACKLIST_PATTERN")
+  if (( ${#BL_MODS[@]} == 0 )); then
+    info "No controller HID driver matching /$HID_BLACKLIST_PATTERN/ on this kernel — nothing to blacklist (needs Linux 7.1+)."
+  elif [[ -e "$BLACKLIST_FILE" ]]; then
+    pass "Blacklist already present: $BLACKLIST_FILE (${BL_MODS[*]})"
   else
-    warn "On ${DEVICE_LABEL}, ${HID_BLACKLIST[*]} fights HHD's emulated pad (gamescope plug/unplug)."
-    if confirm "Blacklist ${HID_BLACKLIST[*]} so only HHD's controller is used? (recommended)"; then
+    warn "Found controller HID driver(s): ${BL_MODS[*]} — these fight HHD's emulated pad (gamescope plug/unplug)."
+    if confirm "Blacklist ${BL_MODS[*]} so only HHD's controller is used? (recommended)"; then
       tmp_bl="$(mktemp)"
-      { echo "# Written by hhd-on-cachyos setup.sh — blacklist native controller HID so HHD's emulated pad is the only one."; for m in "${HID_BLACKLIST[@]}"; do echo "blacklist $m"; done; } > "$tmp_bl"
+      { echo "# Written by hhd-on-cachyos setup.sh — blacklist native controller HID so HHD's emulated pad is the only one."; for m in "${BL_MODS[@]}"; do echo "blacklist $m"; done; } > "$tmp_bl"
       if sudo install -m 0644 "$tmp_bl" "$BLACKLIST_FILE"; then
-        pass "Wrote $BLACKLIST_FILE"
+        pass "Wrote $BLACKLIST_FILE (${BL_MODS[*]})"
+        # unload them now so the effect doesn't wait for reboot (best-effort)
+        for m in "${BL_MODS[@]}"; do sudo modprobe -r "$m" 2>/dev/null || true; done
         if command -v mkinitcpio &>/dev/null; then sudo mkinitcpio -P && pass "initramfs rebuilt" || warnr "mkinitcpio failed; rebuild manually"
         elif command -v dracut &>/dev/null; then sudo dracut --force --regenerate-all && pass "initramfs rebuilt (dracut)" || warnr "dracut failed; rebuild manually"
         else warnr "No mkinitcpio/dracut; rebuild initramfs manually"; fi
-        info "Takes effect after the reboot at the end."
+        info "Takes full effect after the reboot at the end."
       else
         failr "Could not write $BLACKLIST_FILE"
       fi
