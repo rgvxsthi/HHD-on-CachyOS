@@ -194,6 +194,11 @@ elif [[ "$DEVICE" == "lenovo" ]]; then
   # Legion needs xpad + HHD udev rule
   [[ -e /usr/lib/udev/rules.d/83-hhd.rules ]] && pass "HHD udev rules present (83-hhd.rules; xpad binding)" || fail "HHD udev rules missing (/usr/lib/udev/rules.d/83-hhd.rules) — Legion controller may not bind"
   mod_loaded xpad && pass "xpad loaded" || warn "xpad not loaded (Legion controllers bind via xpad)"
+  # hid_lenovo_go: controller config driver (rumble/RGB/sleep), Linux 7.1+
+  for m in "${CONTROLLER_MODULES[@]:-}"; do
+    [[ -z "$m" ]] && continue
+    mod_loaded "$m" && pass "$m loaded (controller config: rumble/RGB/sleep)" || warn "$m not loaded — needs Linux 7.1+ (or a kernel with it); Legion controller config unavailable without it"
+  done
   echo
   echo "${c_bold}MANUAL CHECK (Legion controllers):${c_reset}"
   echo "  No HID module to blacklist on Legion. If the controller is missing, the"
@@ -227,7 +232,7 @@ echo "os:     $(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-unknown}")"
 echo "kernel: $(uname -r)"
 echo "result: ${FAILS} fail, ${WARNS} warn"
 echo "## modules"
-lsmod | grep -iE 'hid_asus|asus_wmi|asus_armoury|acpi_call|xpad|inputplumber|platform_profile|ryzen_smu' || echo "(no matching modules)"
+lsmod | grep -iE 'hid_asus|asus_wmi|asus_armoury|acpi_call|xpad|inputplumber|platform_profile|hid_lenovo|hid_legion|ryzen_smu' || echo "(no matching modules)"
 echo "## packages"
 for p in hhd adjustor hhd-ui acpi_call-dkms inputplumber power-profiles-daemon tuned asusctl rog-control-center supergfxctl "$STEAMOS_HHD_PKG"; do
   pacman -Qq "$p" &>/dev/null && echo "$p $(pacman -Q "$p" | awk '{print $2}')" || echo "$p NOT installed"

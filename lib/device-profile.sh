@@ -163,7 +163,7 @@ detect_device() {
   DEVICE="unknown"; DEVICE_LABEL="Unknown device"
   TDP_KIND=""; TDP_MODULES=(); TDP_CHECK_PATH=""
   EXTRA_PKGS=(); CONFLICT_PKGS=(); CONFLICT_SVC=""
-  HID_BLACKLIST=(); NEEDS_UDEV_XPAD=0; KERNEL_NOTE=""
+  HID_BLACKLIST=(); CONTROLLER_MODULES=(); NEEDS_UDEV_XPAD=0; KERNEL_NOTE=""
 
   # ---- ASUS ROG Ally: substring match on product_name ----
   # Source: hhd src/hhd/device/rog_ally/__init__.py, adjustor core/const.py ASUS_DATA
@@ -207,8 +207,16 @@ detect_device() {
       # via HHD's shipped udev rule (usr/lib/udev/rules.d/83-hhd.rules), esp. the
       # Go S (VID 1a86 PID e310). Ensure HHD's udev rules are installed.
       HID_BLACKLIST=()
+      # hid_lenovo_go: mainline HID driver for the Legion Go/Go S/Go 2 controllers
+      # (queued for Linux 7.1). Exposes the controllers' config: rumble intensity,
+      # RGB, auto-sleep, calibration, OS mode -- i.e. what HHD drives for Legion.
+      # Auto-loads via modalias when the controller is present on a kernel that has
+      # it; we ensure it's loaded and warn if the kernel is too old.
+      # NOTE: verify the exact module name on the target kernel (may be hid_legion /
+      # hid_lenovo_legion_go depending on the merged naming). src: hid.git for-7.1/lenovo-v2.
+      CONTROLLER_MODULES=(hid_lenovo_go)
       NEEDS_UDEV_XPAD=1
-      KERNEL_NOTE="No Legion model hard-requires a special kernel. Deps are the acpi_call module (TDP) and xpad binding for the controllers via HHD's udev rule (Go tablet may need the rule/patch until mainlined). Go 2 (83N0/83N1) specifics UNCONFIRMED. Bazzite kernel still recommended upstream."
+      KERNEL_NOTE="Legion deps: acpi_call (TDP) + xpad binding via HHD's udev rule for the controllers, plus the hid_lenovo_go driver (Linux 7.1+) for controller config (rumble/RGB/sleep). On older kernels hid_lenovo_go is absent -> use a 7.1+/Bazzite kernel for full Legion controller config. Go 2 (83N0/83N1) specifics UNCONFIRMED."
       return 0
       ;;
   esac

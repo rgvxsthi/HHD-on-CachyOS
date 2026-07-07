@@ -221,6 +221,21 @@ for m in "${TDP_MODULES[@]:-}"; do
   fi
 done
 
+# Ensure the device's controller HID driver(s) are loaded (e.g. Legion's
+# hid_lenovo_go for rumble/RGB/config). These auto-load via modalias when the
+# controller is present on a kernel that ships them; modprobe is a best-effort
+# nudge. A missing module usually means the kernel is too old for it.
+for m in "${CONTROLLER_MODULES[@]:-}"; do
+  [[ -z "$m" ]] && continue
+  if mod_loaded "$m"; then
+    pass "$m loaded (controller config driver)"
+  elif sudo modprobe "$m" 2>/dev/null && mod_loaded "$m"; then
+    pass "$m loaded (controller config driver)"
+  else
+    warnr "$m not available on this kernel — Legion controller config (rumble/RGB/sleep) needs Linux 7.1+ (or a kernel with hid_lenovo_go). Auto-loads once present."
+  fi
+done
+
 # Verify the TDP interface path.
 if [[ -n "$TDP_CHECK_PATH" ]]; then
   if [[ -e "$TDP_CHECK_PATH" ]]; then
@@ -441,7 +456,7 @@ diagnostics() {
   echo "dmi:    product_name=$(dmi product_name) sys_vendor=$(dmi sys_vendor)"
   echo
   echo "## modules"
-  lsmod | grep -iE 'hid_asus|asus_wmi|asus_armoury|acpi_call|xpad|inputplumber|platform_profile' || echo "(none matched)"
+  lsmod | grep -iE 'hid_asus|asus_wmi|asus_armoury|acpi_call|xpad|inputplumber|platform_profile|hid_lenovo|hid_legion' || echo "(none matched)"
   echo
   echo "## TDP interface"
   if [[ "$TDP_KIND" == "acpi_call" ]]; then
