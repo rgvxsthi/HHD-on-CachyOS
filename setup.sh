@@ -338,8 +338,13 @@ else
 fi
 
 # ---------- 6. install HHD (+ device extras) ----------
-step "6. Install hhd, adjustor, hhd-ui${EXTRA_PKGS:+ + extras}"
-INSTALL_PKGS=(hhd adjustor hhd-ui "${EXTRA_PKGS[@]:-}")
+# NOTE: do NOT list `adjustor` explicitly. It was merged into `hhd` as of v4 —
+# the current hhd package provides+replaces the standalone adjustor, so naming it
+# here triggers pacman's "replace adjustor with hhd?" prompt / a conflict. Install
+# `hhd` (+ hhd-ui) and let it supply adjustor; if an older repo still ships a
+# separate adjustor as a hard dependency, pacman pulls it in automatically.
+step "6. Install hhd, hhd-ui${EXTRA_PKGS:+ + extras}"
+INSTALL_PKGS=(hhd hhd-ui "${EXTRA_PKGS[@]:-}")
 # drop any empty element from the extras expansion
 CLEAN_PKGS=(); for p in "${INSTALL_PKGS[@]}"; do [[ -n "$p" ]] && CLEAN_PKGS+=("$p"); done
 (( ${#EXTRA_PKGS[@]} > 0 )) && info "Device extras: ${EXTRA_PKGS[*]} (Legion needs acpi_call for TDP)"
