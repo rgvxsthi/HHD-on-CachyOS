@@ -373,39 +373,57 @@ else
 fi
 
 # ---------- 6b. runtime import guard (pkg_resources) ----------
-# hhd's entrypoint does `import pkg_resources`, provided by python-setuptools.
-# setuptools >= 83 REMOVED pkg_resources, so on an updated CachyOS the daemon
-# crash-loops with "ModuleNotFoundError: No module named 'pkg_resources'" and
-# hhd@USER never activates (exit 1, auto-restart). Until hhd upstream migrates
-# off pkg_resources (or setuptools re-adds it), restore a setuptools that still
-# ships it by downgrading from the pacman cache. Self-disabling: once the import
-# works (fixed hhd or fixed setuptools) this block is a silent PASS.
+# hhd's entrypoint uses `pkg_resources` (from python-setuptools) to discover its
+# plugins. setuptools >= 81 REMOVED pkg_resources, so on an updated CachyOS the
+# daemon crash-loops with "ModuleNotFoundError: No module named 'pkg_resources'"
+# and hhd@USER never activates. Downgrading setuptools does NOT help (current
+# builds don't ship pkg_resources at all). Instead install a tiny pkg_resources
+# shim backed by stdlib importlib.metadata — upstream-safe, survives hhd
+# reinstalls/updates. Self-disabling: a silent PASS once the import works.
 step "6b. Runtime dependency check (pkg_resources)"
 if python -c 'import pkg_resources' 2>/dev/null; then
   pass "pkg_resources import OK (hhd can start)"
 else
-  cur="$(pacman -Q python-setuptools 2>/dev/null | awk '{print $2}')"
-  warn "pkg_resources missing — python-setuptools ${cur:-?} dropped it; hhd would crash-loop"
-  pr_fixed=0
-  # try cached setuptools builds, highest version first, skipping the current broken one
-  shopt -s nullglob
-  pr_cands=(/var/cache/pacman/pkg/python-setuptools-*.pkg.tar.zst)
-  shopt -u nullglob
-  IFS=$'\n' read -r -d '' -a pr_cands < <(printf '%s\n' "${pr_cands[@]}" | sort -rV && printf '\0')
-  for cand in "${pr_cands[@]}"; do
-    [[ -n "$cur" && "$cand" == *"$cur"* ]] && continue
-    info "Trying cached $(basename "$cand")"
-    if ASSUME_YES=1 pac -U "$cand" && python -c 'import pkg_resources' 2>/dev/null; then
-      pr_fixed=1; break
-    fi
-  done
-  if (( pr_fixed )); then
-    pass "Restored pkg_resources (downgraded python-setuptools)"
-    warnr "setuptools was downgraded to keep hhd alive; a later 'pacman -Syu' re-upgrades it and re-breaks hhd until upstream is fixed. To hold it, add 'IgnorePkg = python-setuptools' under [options] in /etc/pacman.conf."
+  warn "pkg_resources missing (setuptools dropped it); installing importlib.metadata shim"
+  purelib="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])' 2>/dev/null)"
+  shim_dir="${purelib:-}/pkg_resources"
+  if [[ -z "$purelib" || ! -d "$purelib" ]]; then
+    failr "Could not locate python site-packages; hhd will not start"
+  elif [[ -e "$shim_dir/__init__.py" ]] && ! grep -q 'HHD-on-CachyOS' "$shim_dir/__init__.py" 2>/dev/null; then
+    failr "A non-shim pkg_resources exists at $shim_dir; not overwriting"
   else
-    failr "Could not restore pkg_resources from cache; hhd will not start"
-    err "Fix: downgrade python-setuptools below 83 (Arch archive / 'downgrade' tool),"
-    err "or wait for an hhd update that drops the pkg_resources import."
+    read -r -d '' shim_py <<'PYEOF' || true
+# pkg_resources compatibility shim installed by HHD-on-CachyOS (setup.sh).
+# setuptools >= 81 removed pkg_resources, but hhd still imports it for plugin
+# discovery. Provides only the subset hhd uses (iter_entry_points), backed by
+# stdlib importlib.metadata. Safe to delete once hhd no longer imports it.
+from importlib.metadata import entry_points as _entry_points
+
+
+class _EntryPoint:
+    def __init__(self, ep):
+        self._ep = ep
+        self.name = ep.name
+
+    def resolve(self):
+        return self._ep.load()
+
+    def load(self, *args, **kwargs):
+        return self._ep.load()
+
+
+def iter_entry_points(group, name=None):
+    for ep in _entry_points(group=group):
+        if name is None or ep.name == name:
+            yield _EntryPoint(ep)
+PYEOF
+    if sudo install -d "$shim_dir" \
+        && printf '%s\n' "$shim_py" | sudo tee "$shim_dir/__init__.py" >/dev/null \
+        && python -c 'import pkg_resources; next(iter(pkg_resources.iter_entry_points("hhd.plugins")), None)' 2>/dev/null; then
+      pass "Installed pkg_resources shim (hhd can start)"
+    else
+      failr "Could not install the pkg_resources shim; hhd will not start"
+    fi
   fi
 fi
 

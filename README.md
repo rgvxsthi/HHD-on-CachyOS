@@ -305,9 +305,9 @@ File ".../site-packages/hhd/__main__.py", line 16, in <module>
 ModuleNotFoundError: No module named 'pkg_resources'
 ```
 
-**Cause:** hhd's entrypoint imports `pkg_resources`, which ships inside `python-setuptools`. **setuptools ≥ 83 removed `pkg_resources`**, so once an update pulls setuptools 83 the daemon exits 1 on every start. This is upstream (hhd hasn't migrated off the deprecated module yet), not a fault of this installer.
+**Cause:** hhd's entrypoint uses `pkg_resources` (from `python-setuptools`) to discover its plugins. **setuptools ≥ 81 removed `pkg_resources`**, so once an update pulls a newer setuptools the module is gone and the daemon exits 1 on every start. This is upstream (hhd hasn't migrated off the deprecated module yet), not a fault of this installer. Downgrading setuptools does **not** help — the current packages don't ship `pkg_resources` at all.
 
-**Fix** — restores a setuptools that still ships `pkg_resources` (downgraded from your pacman cache), restarts hhd, and offers to hold setuptools so the next update won't re-break it:
+**Fix** — installs a tiny `pkg_resources` compatibility shim (just the `iter_entry_points` hhd needs, backed by the standard-library `importlib.metadata`), then restarts hhd:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/fix-hhd.sh | bash
@@ -315,7 +315,7 @@ curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/fix-hh
 ./fix-hhd.sh
 ```
 
-`setup.sh` also runs this repair automatically (step 6b) after installing, so a fresh `setup.sh` on an already-updated system comes up working. If you let it hold `python-setuptools` via `IgnorePkg`, remove that line from `/etc/pacman.conf` once an hhd update lands that no longer imports `pkg_resources`.
+The shim is upstream-safe, needs no setuptools downgrade or package hold, and **survives hhd reinstalls and updates**. `setup.sh` also installs it automatically (step 6b), so a fresh `setup.sh` on an already-updated system comes up working. `uninstall.sh` removes the shim. Once an hhd update lands that no longer imports `pkg_resources`, the shim is harmless and can be deleted (`sudo rm -rf <site-packages>/pkg_resources`).
 
 ## Credits
 

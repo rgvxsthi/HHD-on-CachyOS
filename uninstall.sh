@@ -223,6 +223,17 @@ for p in "${EXTRA_PKGS[@]:-}"; do
   fi
 done
 
+# 3d. pkg_resources shim (installed by setup.sh/fix-hhd.sh when setuptools dropped
+# pkg_resources). Remove ONLY our shim, identified by its marker comment — never
+# a real pkg_resources.
+purelib="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])' 2>/dev/null)"
+shim_dir="${purelib:-}/pkg_resources"
+if [[ -n "$purelib" && -f "$shim_dir/__init__.py" ]] && grep -q 'HHD-on-CachyOS' "$shim_dir/__init__.py" 2>/dev/null; then
+  if sudo rm -rf "$shim_dir"; then pass "Removed pkg_resources shim"; else warnr "Could not remove pkg_resources shim at $shim_dir"; fi
+else
+  info "No HHD pkg_resources shim to remove"
+fi
+
 # NOTE: we deliberately do NOT touch the controller RGB here. On the ROG Ally the
 # joystick-ring RGB (ally:rgb:joystick_rings) is lit by default at boot by the
 # ASUS driver / InputPlumber — it is NOT HHD-specific. HHD only changes its colour
