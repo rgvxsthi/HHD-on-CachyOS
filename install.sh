@@ -37,11 +37,12 @@ die()  { printf '%s[hhd] error:%s %s\n' "$c_r" "$c_0" "$*" >&2; exit 1; }
 # ---- pick the action ----
 ACTION="setup"
 case "${1:-}" in
-  setup|verify|uninstall) ACTION="$1"; shift ;;
-  ""|-*)                  ACTION="setup" ;;   # no arg, or a flag for setup
-  *)                      die "unknown action '${1}' (use: setup | verify | uninstall)" ;;
+  setup|verify|uninstall|fix) ACTION="$1"; shift ;;
+  ""|-*)                      ACTION="setup" ;;   # no arg, or a flag for setup
+  *)                          die "unknown action '${1}' (use: setup | verify | uninstall | fix)" ;;
 esac
-SCRIPT="${ACTION}.sh"
+# `fix` maps to the standalone repair script (fix-hhd.sh); others are <action>.sh
+if [[ "$ACTION" == "fix" ]]; then SCRIPT="fix-hhd.sh"; else SCRIPT="${ACTION}.sh"; fi
 
 # ---- prerequisites ----
 command -v tar >/dev/null 2>&1 || die "tar is required."
@@ -70,7 +71,7 @@ mkdir -p "$DIR" || die "cannot create ${DIR}"
 tar -xzf "$TMP/src.tar.gz" -C "$DIR" --strip-components=1 || die "extract failed."
 
 [[ -r "$DIR/lib/device-profile.sh" ]] || die "lib/device-profile.sh missing after extract (bad tarball?)."
-chmod +x "$DIR"/setup.sh "$DIR"/verify.sh "$DIR"/uninstall.sh 2>/dev/null || true
+chmod +x "$DIR"/setup.sh "$DIR"/verify.sh "$DIR"/uninstall.sh "$DIR"/fix-hhd.sh 2>/dev/null || true
 say "installed to ${DIR}"
 
 # ---- run the chosen script ----

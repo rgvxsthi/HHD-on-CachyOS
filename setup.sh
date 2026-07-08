@@ -372,6 +372,43 @@ else
   exit 1
 fi
 
+# ---------- 6b. runtime import guard (pkg_resources) ----------
+# hhd's entrypoint does `import pkg_resources`, provided by python-setuptools.
+# setuptools >= 83 REMOVED pkg_resources, so on an updated CachyOS the daemon
+# crash-loops with "ModuleNotFoundError: No module named 'pkg_resources'" and
+# hhd@USER never activates (exit 1, auto-restart). Until hhd upstream migrates
+# off pkg_resources (or setuptools re-adds it), restore a setuptools that still
+# ships it by downgrading from the pacman cache. Self-disabling: once the import
+# works (fixed hhd or fixed setuptools) this block is a silent PASS.
+step "6b. Runtime dependency check (pkg_resources)"
+if python -c 'import pkg_resources' 2>/dev/null; then
+  pass "pkg_resources import OK (hhd can start)"
+else
+  cur="$(pacman -Q python-setuptools 2>/dev/null | awk '{print $2}')"
+  warn "pkg_resources missing — python-setuptools ${cur:-?} dropped it; hhd would crash-loop"
+  pr_fixed=0
+  # try cached setuptools builds, highest version first, skipping the current broken one
+  shopt -s nullglob
+  pr_cands=(/var/cache/pacman/pkg/python-setuptools-*.pkg.tar.zst)
+  shopt -u nullglob
+  IFS=$'\n' read -r -d '' -a pr_cands < <(printf '%s\n' "${pr_cands[@]}" | sort -rV && printf '\0')
+  for cand in "${pr_cands[@]}"; do
+    [[ -n "$cur" && "$cand" == *"$cur"* ]] && continue
+    info "Trying cached $(basename "$cand")"
+    if ASSUME_YES=1 pac -U "$cand" && python -c 'import pkg_resources' 2>/dev/null; then
+      pr_fixed=1; break
+    fi
+  done
+  if (( pr_fixed )); then
+    pass "Restored pkg_resources (downgraded python-setuptools)"
+    warnr "setuptools was downgraded to keep hhd alive; a later 'pacman -Syu' re-upgrades it and re-breaks hhd until upstream is fixed. To hold it, add 'IgnorePkg = python-setuptools' under [options] in /etc/pacman.conf."
+  else
+    failr "Could not restore pkg_resources from cache; hhd will not start"
+    err "Fix: downgrade python-setuptools below 83 (Arch archive / 'downgrade' tool),"
+    err "or wait for an hhd update that drops the pkg_resources import."
+  fi
+fi
+
 # Legion: TDP module comes from acpi_call-dkms just installed; try loading now.
 if [[ "$TDP_KIND" == "acpi_call" ]]; then
   if sudo modprobe acpi_call 2>/dev/null && [[ -e /proc/acpi/call ]]; then

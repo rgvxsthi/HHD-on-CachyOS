@@ -42,6 +42,8 @@ curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/instal
 curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- verify
 # uninstall
 curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- uninstall
+# repair a broken install (hhd won't start after a CachyOS update — see Troubleshooting)
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/install.sh | bash -s -- fix
 ```
 
 By default it fetches the latest tagged release; override with `HHD_REF=main` (branch/tag) or `HHD_DIR=/path` (install location). `HHD_NO_RUN=1` downloads without running.
@@ -290,6 +292,30 @@ You will see this repeated everywhere. It does not apply cleanly to CachyOS:
 ./uninstall.sh --no-restore    # strip HHD only, leave PPD/InputPlumber as the install left them
 ./uninstall.sh --purge --yes   # non-interactive full teardown incl. config + logs
 ```
+
+## Troubleshooting
+
+### hhd won't start after a CachyOS update (`ModuleNotFoundError: No module named 'pkg_resources'`)
+
+**Symptom:** after a `pacman -Syu`, `hhd@<user>.service` never activates. `systemctl status hhd@<user>` shows `activating (auto-restart)` and the journal repeats:
+
+```
+File ".../site-packages/hhd/__main__.py", line 16, in <module>
+    import pkg_resources
+ModuleNotFoundError: No module named 'pkg_resources'
+```
+
+**Cause:** hhd's entrypoint imports `pkg_resources`, which ships inside `python-setuptools`. **setuptools ≥ 83 removed `pkg_resources`**, so once an update pulls setuptools 83 the daemon exits 1 on every start. This is upstream (hhd hasn't migrated off the deprecated module yet), not a fault of this installer.
+
+**Fix** — restores a setuptools that still ships `pkg_resources` (downgraded from your pacman cache), restarts hhd, and offers to hold setuptools so the next update won't re-break it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rgvxsthi/HHD-on-CachyOS/main/fix-hhd.sh | bash
+# or, if you cloned the repo:
+./fix-hhd.sh
+```
+
+`setup.sh` also runs this repair automatically (step 6b) after installing, so a fresh `setup.sh` on an already-updated system comes up working. If you let it hold `python-setuptools` via `IgnorePkg`, remove that line from `/etc/pacman.conf` once an hhd update lands that no longer imports `pkg_resources`.
 
 ## Credits
 
