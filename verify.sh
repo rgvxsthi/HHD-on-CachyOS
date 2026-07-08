@@ -181,7 +181,21 @@ sec "6. Controller"
 # ============================================================================
 echo "Controller devices seen by the kernel:"
 grep -iE 'name=' /proc/bus/input/devices 2>/dev/null | grep -iE 'x-box|xbox|dualsense|handheld|rog|legion|microsoft' | sed 's/^/  /' || echo "  (none matched)"
-if grep -qi 'Handheld Daemon Controller' /proc/bus/input/devices 2>/dev/null; then pass "HHD virtual controller present"; else warn "HHD virtual controller not present yet"; fi
+# HHD names its emulated pad per emulation mode ("Handheld Daemon Controller",
+# "Xbox Elite", "Xbox 360", DualSense, ...), so don't match one name — the
+# reliable signal is HHD's own journal saying it launched an emulated controller.
+if grep -qiE 'Handheld Daemon Controller' /proc/bus/input/devices 2>/dev/null \
+   || sudo journalctl -u "hhd@${REAL_USER}" -b --no-pager 2>/dev/null | grep -qi 'Emulated controller launched'; then
+  pass "HHD emulated controller launched (its pad may be named Xbox Elite / Xbox 360 / DualSense per mode)"
+else
+  warn "HHD emulated controller not launched yet"
+fi
+# Warn about a competing NATIVE gamepad that games may grab instead of HHD's pad
+# (seen on the ROG Xbox Ally: the asus_rog_ally kernel driver exposes its own
+# gamepad evdev that HHD's hidraw-only udev banish rule doesn't hide).
+if grep -qiE 'Name="ASUS ROG.*Gamepad"' /proc/bus/input/devices 2>/dev/null; then
+  warn "A native 'ASUS ROG … Gamepad' evdev is present alongside HHD's pad — games may read it (scrambled buttons). Xbox Ally: needs the native gamepad hidden (see README)."
+fi
 
 if [[ "$DEVICE" == "asus" ]]; then
   # report blacklist state (setup/README optional step)
