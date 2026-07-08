@@ -348,6 +348,22 @@ INSTALL_PKGS=(hhd hhd-ui "${EXTRA_PKGS[@]:-}")
 # drop any empty element from the extras expansion
 CLEAN_PKGS=(); for p in "${INSTALL_PKGS[@]}"; do [[ -n "$p" ]] && CLEAN_PKGS+=("$p"); done
 (( ${#EXTRA_PKGS[@]} > 0 )) && info "Device extras: ${EXTRA_PKGS[*]} (Legion needs acpi_call for TDP)"
+
+# A leftover standalone `adjustor` package makes the hhd install below stop on
+# pacman's "replace adjustor with hhd?" conflict — which --noconfirm answers as
+# NO and aborts, and which leaves stale adjustor python modules that can stop
+# hhd@USER from starting. Strip it first so the install is clean + non-interactive.
+# hhd (v4+) provides+replaces adjustor, so nothing is lost. -Rdd: adjustor's files
+# may already be owned by hhd, and we don't want a dependency check to block this.
+if pacman -Qq adjustor &>/dev/null; then
+  info "Removing leftover standalone 'adjustor' (merged into hhd as of v4)"
+  if ASSUME_YES=1 pac -Rdd adjustor; then
+    pass "Standalone adjustor removed (hhd will supply it)"
+  else
+    warnr "Could not remove standalone adjustor; pacman may prompt to replace it below"
+  fi
+fi
+
 if pac -S --needed "${CLEAN_PKGS[@]}"; then
   pass "Packages installed: ${CLEAN_PKGS[*]}"
 else
