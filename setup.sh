@@ -465,7 +465,7 @@ case "$STEAM_SLIDER" in
     # --steam-slider for unattended runs. Only prompt in a real interactive run.
     if [[ "$ASSUME_YES" -eq 1 ]]; then
       info "Skipping the in-Steam slider under --yes. Pass --steam-slider to opt in."
-    elif confirm "Install steamos-manager-hhd for the in-Steam TDP slider (SteamOS/Bazzite Deck menu)? Builds from AUR and replaces stock steamos-manager." N; then
+    elif confirm "Install steamos-manager-hhd for the in-Steam TDP slider (SteamOS/Bazzite Deck menu)? Builds from AUR and replaces stock steamos-manager." Y; then
       do_slider=1
     else
       info "Skipped."
